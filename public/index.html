@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>記帳本</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>💰 記帳本</h1>
+    <a class="export-btn" href="/api/export?days=30" download>匯出 CSV</a>
+  </header>
+
+  <main>
+    <!-- Add / Edit Form -->
+    <section class="form-card" id="form-section">
+      <h2 id="form-title">新增支出</h2>
+      <form id="expense-form">
+        <input type="hidden" id="edit-id">
+        <div class="row">
+          <label>金額<input type="number" id="amount" step="0.01" min="0.01" required placeholder="0"></label>
+          <label>日期<input type="date" id="date" required></label>
+        </div>
+        <div class="row">
+          <label>類別
+            <select id="category" required></select>
+          </label>
+          <label>標籤<input type="text" id="tags" placeholder="逗號分隔"></label>
+        </div>
+        <label>備註<input type="text" id="note" placeholder="選填"></label>
+        <div class="form-actions">
+          <button type="submit" id="submit-btn">新增</button>
+          <button type="button" id="cancel-btn" class="secondary" style="display:none">取消</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Filter -->
+    <section class="filter-bar">
+      <label>從 <input type="date" id="filter-from"></label>
+      <label>到 <input type="date" id="filter-to"></label>
+      <label>類別
+        <select id="filter-category">
+          <option value="">全部</option>
+        </select>
+      </label>
+      <button id="filter-btn">篩選</button>
+      <button id="reset-btn" class="secondary">重置</button>
+    </section>
+
+    <!-- Summary -->
+    <div class="summary" id="summary"></div>
+
+    <!-- List -->
+    <section class="expense-list" id="expense-list">
+      <p class="empty">載入中...</p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
