@@ -1,5 +1,5 @@
 const express = require('express');
-const { DatabaseSync } = require('node:sqlite');
+const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
@@ -10,7 +10,7 @@ const DB_PATH = path.join(__dirname, '../data/expenses.db');
 // Ensure data directory exists
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-const db = new DatabaseSync(DB_PATH);
+const db = new Database(DB_PATH);
 
 // Schema setup
 db.exec(`
