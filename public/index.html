@@ -11,62 +11,182 @@
 <body>
   <header>
     <h1>💰 記帳本</h1>
-    <a class="export-btn" href="/api/export?days=30" download>匯出 CSV</a>
+    <nav class="tab-nav">
+      <a class="tab active" href="#transactions" data-tab="transactions">記帳</a>
+      <a class="tab" href="#accounts" data-tab="accounts">帳戶</a>
+      <a class="tab" href="#recurring" data-tab="recurring">固定支出</a>
+      <a class="tab" href="#reports" data-tab="reports">報表</a>
+    </nav>
   </header>
 
   <main>
-    <!-- Add / Edit Form -->
-    <section class="form-card" id="form-section">
-      <h2 id="form-title">新增支出</h2>
-      <form id="expense-form">
-        <input type="hidden" id="edit-id">
-        <div class="row">
-          <label>金額<input type="number" id="amount" step="0.01" min="0.01" required placeholder="0"></label>
-          <label>日期<input type="date" id="date" required></label>
-        </div>
-        <div class="row">
-          <label>大分類
-            <select id="category" required></select>
-          </label>
-          <label>小分類
-            <select id="subcategory"><option value="">（無）</option></select>
-          </label>
-        </div>
-        <div class="row">
-          <label>標籤<input type="text" id="tags" placeholder="逗號分隔"></label>
-        </div>
-        <label>備註<input type="text" id="note" placeholder="選填"></label>
-        <div class="form-actions">
-          <button type="submit" id="submit-btn">新增</button>
-          <button type="button" id="cancel-btn" class="secondary" style="display:none">取消</button>
-        </div>
-      </form>
+    <!-- ═══ Transactions Tab ═══ -->
+    <section id="page-transactions" class="page active">
+      <!-- Add / Edit Transaction Form -->
+      <div class="form-card" id="form-section">
+        <h2 id="form-title">新增交易</h2>
+        <form id="tx-form">
+          <input type="hidden" id="edit-id">
+          <!-- Transaction type selector -->
+          <div class="tx-type-bar">
+            <button type="button" class="tx-type active" data-type="expense">支出</button>
+            <button type="button" class="tx-type" data-type="income">收入</button>
+            <button type="button" class="tx-type" data-type="transfer">轉帳</button>
+          </div>
+          <div class="row">
+            <label>金額<input type="number" id="amount" step="0.01" min="0.01" required placeholder="0"></label>
+            <label>日期<input type="date" id="date" required></label>
+          </div>
+          <div class="row">
+            <label>來源帳戶
+              <select id="source-account" required></select>
+            </label>
+            <label>目的帳戶
+              <select id="dest-account" required></select>
+            </label>
+          </div>
+          <div class="row" id="category-row">
+            <label>大分類
+              <select id="category"></select>
+            </label>
+            <label>小分類
+              <select id="subcategory"><option value="">（無）</option></select>
+            </label>
+          </div>
+          <label>說明<input type="text" id="description" placeholder="交易說明"></label>
+          <div class="row">
+            <label>標籤<input type="text" id="tags" placeholder="逗號分隔"></label>
+          </div>
+          <label>備註<input type="text" id="note" placeholder="選填"></label>
+          <div class="form-actions">
+            <button type="submit" id="submit-btn">新增</button>
+            <button type="button" id="cancel-btn" class="secondary" style="display:none">取消</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Filter -->
+      <div class="filter-bar">
+        <label>從 <input type="date" id="filter-from"></label>
+        <label>到 <input type="date" id="filter-to"></label>
+        <label>類型
+          <select id="filter-type">
+            <option value="">全部</option>
+            <option value="expense">支出</option>
+            <option value="income">收入</option>
+            <option value="transfer">轉帳</option>
+          </select>
+        </label>
+        <label>分類
+          <select id="filter-category">
+            <option value="">全部</option>
+          </select>
+        </label>
+        <button id="filter-btn">篩選</button>
+        <button id="reset-btn" class="secondary">重置</button>
+        <a class="export-link" href="/api/export?days=30" download>匯出 CSV</a>
+      </div>
+
+      <!-- Summary -->
+      <div class="summary" id="summary"></div>
+
+      <!-- Transaction List -->
+      <div class="expense-list" id="tx-list">
+        <p class="empty">載入中...</p>
+      </div>
     </section>
 
-    <!-- Filter -->
-    <section class="filter-bar">
-      <label>從 <input type="date" id="filter-from"></label>
-      <label>到 <input type="date" id="filter-to"></label>
-      <label>大分類
-        <select id="filter-category">
-          <option value="">全部</option>
-        </select>
-      </label>
-      <label>小分類
-        <select id="filter-subcategory">
-          <option value="">全部</option>
-        </select>
-      </label>
-      <button id="filter-btn">篩選</button>
-      <button id="reset-btn" class="secondary">重置</button>
+    <!-- ═══ Accounts Tab ═══ -->
+    <section id="page-accounts" class="page">
+      <div class="form-card">
+        <h2>新增帳戶</h2>
+        <form id="account-form">
+          <div class="row">
+            <label>名稱<input type="text" id="acc-name" required placeholder="帳戶名稱"></label>
+            <label>類型
+              <select id="acc-type" required>
+                <option value="asset">資產</option>
+                <option value="liabilities">負債</option>
+                <option value="revenue">收入</option>
+                <option value="expense">支出</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <label>圖示<input type="text" id="acc-icon" placeholder="💰"></label>
+            <label>初始餘額<input type="number" id="acc-balance" step="0.01" value="0"></label>
+          </div>
+          <div class="form-actions">
+            <button type="submit">新增帳戶</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Account groups -->
+      <div id="account-groups"></div>
     </section>
 
-    <!-- Summary -->
-    <div class="summary" id="summary"></div>
+    <!-- ═══ Recurring Tab ═══ -->
+    <section id="page-recurring" class="page">
+      <div class="form-card">
+        <h2>新增固定交易</h2>
+        <form id="recurring-form">
+          <div class="row">
+            <label>名稱<input type="text" id="rec-title" required placeholder="例：房租"></label>
+            <label>金額<input type="number" id="rec-amount" step="0.01" min="0.01" required></label>
+          </div>
+          <div class="row">
+            <label>來源帳戶
+              <select id="rec-source" required></select>
+            </label>
+            <label>目的帳戶
+              <select id="rec-dest" required></select>
+            </label>
+          </div>
+          <div class="row">
+            <label>頻率
+              <select id="rec-freq" required>
+                <option value="monthly">每月</option>
+                <option value="weekly">每週</option>
+                <option value="daily">每日</option>
+                <option value="yearly">每年</option>
+              </select>
+            </label>
+            <label>下次日期<input type="date" id="rec-next" required></label>
+          </div>
+          <div class="row">
+            <label>分類
+              <select id="rec-category"><option value="">（無）</option></select>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit">新增</button>
+            <button type="button" id="process-recurring-btn" class="secondary">執行到期項目</button>
+          </div>
+        </form>
+      </div>
+      <div id="recurring-list"></div>
+    </section>
 
-    <!-- List -->
-    <section class="expense-list" id="expense-list">
-      <p class="empty">載入中...</p>
+    <!-- ═══ Reports Tab ═══ -->
+    <section id="page-reports" class="page">
+      <div class="report-section">
+        <h2>月收支對比</h2>
+        <div id="monthly-chart" class="chart-container"></div>
+      </div>
+      <div class="report-section">
+        <h2>支出分類佔比</h2>
+        <div class="row">
+          <label>從 <input type="date" id="report-from"></label>
+          <label>到 <input type="date" id="report-to"></label>
+          <button id="report-filter-btn">更新</button>
+        </div>
+        <div id="category-chart" class="chart-container"></div>
+      </div>
+      <div class="report-section">
+        <h2>淨資產走勢</h2>
+        <div id="networth-chart" class="chart-container"></div>
+      </div>
     </section>
   </main>
 

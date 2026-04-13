@@ -1,7 +1,8 @@
 'use strict';
 
-const CATEGORY_ICONS = {};
-let categories = []; // each: { id, name, icon, subcategories: [{id, name}] }
+let accounts = [];
+let categories = [];
+let currentTxType = 'expense';
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -13,223 +14,601 @@ async function api(method, path, body) {
   return res.json();
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+function today() { return new Date().toISOString().slice(0, 10); }
 
 function fmtAmount(n) {
-  return 'NT$ ' + Number(n).toLocaleString('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return 'NT$ ' + Number(n).toLocaleString('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-// ── Categories ────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+const ACCOUNT_TYPE_LABELS = { asset: '資產', liabilities: '負債', revenue: '收入來源', expense: '支出類別' };
+const FREQ_LABELS = { daily: '每日', weekly: '每週', monthly: '每月', yearly: '每年' };
+const PIE_COLORS = ['#818cf8','#34d399','#f59e0b','#f87171','#38bdf8','#a78bfa','#fb923c','#4ade80','#e879f9','#94a3b8'];
+
+// ── Tab Navigation ───────────────────────────────────────────────────────────
+
+function initTabs() {
+  const tabs = document.querySelectorAll('.tab');
+  const navigate = () => {
+    const hash = location.hash.slice(1) || 'transactions';
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === hash));
+    document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + hash));
+
+    if (hash === 'accounts') loadAccountsPage();
+    if (hash === 'recurring') loadRecurringPage();
+    if (hash === 'reports') loadReportsPage();
+  };
+  window.addEventListener('hashchange', navigate);
+  navigate();
+}
+
+// ── Data Loading ─────────────────────────────────────────────────────────────
+
+async function loadAccounts() {
+  accounts = await api('GET', '/api/accounts');
+}
 
 async function loadCategories() {
   categories = await api('GET', '/api/categories');
-  categories.forEach(c => { CATEGORY_ICONS[c.name] = c.icon || '📦'; });
 
-  // Form: category dropdown
-  const catSel = document.getElementById('category');
-  catSel.innerHTML = '';
-  categories.forEach(c => {
-    catSel.insertAdjacentHTML('beforeend',
-      `<option value="${c.name}">${c.icon || ''} ${c.name}</option>`);
-  });
-
-  // Filter: category dropdown
+  // Populate filter category dropdown
   const filterCatSel = document.getElementById('filter-category');
   filterCatSel.innerHTML = '<option value="">全部</option>';
   categories.forEach(c => {
     filterCatSel.insertAdjacentHTML('beforeend',
-      `<option value="${c.name}">${c.icon || ''} ${c.name}</option>`);
+      `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
   });
+}
 
-  // Populate subcategory for the initially selected category
+// ── Transaction Type Toggle ──────────────────────────────────────────────────
+
+function initTxType() {
+  document.querySelectorAll('.tx-type').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tx-type').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTxType = btn.dataset.type;
+      populateAccountDropdowns();
+    });
+  });
+}
+
+function populateAccountDropdowns() {
+  const srcSel = document.getElementById('source-account');
+  const dstSel = document.getElementById('dest-account');
+  const catRow = document.getElementById('category-row');
+
+  srcSel.innerHTML = '';
+  dstSel.innerHTML = '';
+
+  if (currentTxType === 'expense') {
+    // Source: asset accounts; Dest: expense accounts
+    accounts.filter(a => a.type === 'asset').forEach(a => {
+      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+    });
+    accounts.filter(a => a.type === 'expense').forEach(a => {
+      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+    });
+    catRow.style.display = '';
+  } else if (currentTxType === 'income') {
+    // Source: revenue accounts; Dest: asset accounts
+    accounts.filter(a => a.type === 'revenue').forEach(a => {
+      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+    });
+    accounts.filter(a => a.type === 'asset').forEach(a => {
+      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+    });
+    catRow.style.display = 'none';
+  } else {
+    // Transfer: asset to asset
+    accounts.filter(a => a.type === 'asset' || a.type === 'liabilities').forEach(a => {
+      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+    });
+    catRow.style.display = 'none';
+  }
+
+  populateCategoryDropdown();
+}
+
+function populateCategoryDropdown() {
+  const catSel = document.getElementById('category');
+  catSel.innerHTML = '<option value="">（無）</option>';
+  categories.forEach(c => {
+    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
+  });
   updateSubcategoryDropdown();
-  updateFilterSubcategoryDropdown();
 }
 
 function updateSubcategoryDropdown() {
-  const catName = document.getElementById('category').value;
+  const catId = parseInt(document.getElementById('category').value);
   const subSel = document.getElementById('subcategory');
   subSel.innerHTML = '<option value="">（無）</option>';
-
-  const cat = categories.find(c => c.name === catName);
+  const cat = categories.find(c => c.id === catId);
   if (cat && cat.subcategories.length > 0) {
     cat.subcategories.forEach(s => {
-      subSel.insertAdjacentHTML('beforeend',
-        `<option value="${s.name}">${s.name}</option>`);
-    });
-  }
-}
-
-function updateFilterSubcategoryDropdown() {
-  const catName = document.getElementById('filter-category').value;
-  const subSel = document.getElementById('filter-subcategory');
-  subSel.innerHTML = '<option value="">全部</option>';
-
-  if (!catName) return;
-  const cat = categories.find(c => c.name === catName);
-  if (cat && cat.subcategories.length > 0) {
-    cat.subcategories.forEach(s => {
-      subSel.insertAdjacentHTML('beforeend',
-        `<option value="${s.name}">${s.name}</option>`);
+      subSel.insertAdjacentHTML('beforeend', `<option value="${s.id}">${s.name}</option>`);
     });
   }
 }
 
 document.getElementById('category').addEventListener('change', updateSubcategoryDropdown);
-document.getElementById('filter-category').addEventListener('change', () => {
-  updateFilterSubcategoryDropdown();
-  document.getElementById('filter-subcategory').value = '';
-});
 
-// ── Expense List ──────────────────────────────────────────────────────────────
+// ── Transaction List ─────────────────────────────────────────────────────────
 
-async function loadExpenses() {
+async function loadTransactions() {
   const from = document.getElementById('filter-from').value;
-  const to   = document.getElementById('filter-to').value;
-  const cat  = document.getElementById('filter-category').value;
-  const sub  = document.getElementById('filter-subcategory').value;
+  const to = document.getElementById('filter-to').value;
+  const type = document.getElementById('filter-type').value;
+  const catId = document.getElementById('filter-category').value;
 
   const params = new URLSearchParams();
   if (from) params.set('from', from);
-  if (to)   params.set('to', to);
-  if (cat)  params.set('category', cat);
-  if (sub)  params.set('subcategory', sub);
+  if (to) params.set('to', to);
+  if (type) params.set('type', type);
+  if (catId) params.set('category_id', catId);
 
-  const expenses = await api('GET', '/api/expenses?' + params);
-  renderExpenses(expenses);
+  const txs = await api('GET', '/api/transactions?' + params);
+  renderTransactions(txs);
 }
 
-function renderExpenses(expenses) {
-  const list = document.getElementById('expense-list');
+function getTxType(tx) {
+  if (tx.source_type === 'asset' && tx.dest_type === 'expense') return 'expense';
+  if (tx.source_type === 'revenue' && tx.dest_type === 'asset') return 'income';
+  if (tx.source_type === 'asset' && tx.dest_type === 'asset') return 'transfer';
+  return 'other';
+}
+
+function renderTransactions(txs) {
+  const list = document.getElementById('tx-list');
   const summary = document.getElementById('summary');
 
-  if (expenses.length === 0) {
-    list.innerHTML = '<p class="empty">沒有支出紀錄</p>';
-    summary.textContent = '共 0 筆，合計 NT$ 0';
+  if (txs.length === 0) {
+    list.innerHTML = '<p class="empty">沒有交易紀錄</p>';
+    summary.textContent = '共 0 筆';
     return;
   }
 
-  const total = expenses.reduce((s, e) => s + e.amount, 0);
-  summary.textContent = `共 ${expenses.length} 筆，合計 ${fmtAmount(total)}`;
+  const totalExpense = txs.filter(t => getTxType(t) === 'expense').reduce((s, t) => s + t.amount, 0);
+  const totalIncome = txs.filter(t => getTxType(t) === 'income').reduce((s, t) => s + t.amount, 0);
+  summary.textContent = `共 ${txs.length} 筆 | 支出 ${fmtAmount(totalExpense)} | 收入 ${fmtAmount(totalIncome)}`;
 
-  list.innerHTML = expenses.map(e => {
-    const icon = CATEGORY_ICONS[e.category] || '📦';
-    const tags = e.tags ? `<span class="expense-tags">${e.tags.split(',').map(t => '#' + t.trim()).join(' ')}</span>` : '';
-    const note = e.note ? `${e.note}　` : '';
-    const subLabel = e.subcategory ? ` / ${e.subcategory}` : '';
+  list.innerHTML = txs.map(tx => {
+    const type = getTxType(tx);
+    const icon = tx.category_icon || tx.dest_icon || '💰';
+    const amtClass = type === 'income' ? 'income' : type === 'transfer' ? 'transfer' : '';
+    const prefix = type === 'income' ? '+' : type === 'transfer' ? '' : '-';
+    const tags = tx.tags ? `<span class="expense-tags">${tx.tags.split(',').map(t => '#' + t.trim()).join(' ')}</span>` : '';
+    const desc = tx.description ? escHtml(tx.description) : (tx.category_name || tx.dest_name);
+    const subLabel = tx.subcategory_name ? ` / ${escHtml(tx.subcategory_name)}` : '';
+    const flow = `${tx.source_name} → ${tx.dest_name}`;
+    const note = tx.note ? `${escHtml(tx.note)}　` : '';
+
     return `
-      <div class="expense-item" data-id="${e.id}">
+      <div class="expense-item" data-id="${tx.id}">
         <div class="expense-icon">${icon}</div>
         <div class="expense-info">
           <div class="expense-main">
-            <span class="expense-category">${e.category}${subLabel}</span>
-            <span class="expense-amount">${fmtAmount(e.amount)}</span>
+            <span class="expense-category">${desc}${subLabel}</span>
+            <span class="expense-amount ${amtClass}">${prefix}${fmtAmount(tx.amount)}</span>
           </div>
-          <div class="expense-sub">${e.date}　${note}${tags}</div>
+          <div class="expense-sub">
+            ${tx.date}　<span class="expense-flow">${flow}</span>　${note}${tags}
+          </div>
         </div>
         <div class="expense-actions">
-          <button class="secondary" onclick="startEdit(${e.id})">編輯</button>
-          <button class="danger" onclick="deleteExpense(${e.id})">刪除</button>
+          <button class="secondary" onclick="startEditTx(${tx.id})">編輯</button>
+          <button class="danger" onclick="deleteTx(${tx.id})">刪除</button>
         </div>
       </div>`;
   }).join('');
 }
 
-// ── Form: Add ─────────────────────────────────────────────────────────────────
+// ── Transaction Form ─────────────────────────────────────────────────────────
 
 document.getElementById('date').value = today();
 
-document.getElementById('expense-form').addEventListener('submit', async e => {
+document.getElementById('tx-form').addEventListener('submit', async e => {
   e.preventDefault();
   const editId = document.getElementById('edit-id').value;
   const body = {
-    amount:      parseFloat(document.getElementById('amount').value),
-    category:    document.getElementById('category').value,
-    subcategory: document.getElementById('subcategory').value || null,
-    note:        document.getElementById('note').value.trim(),
-    tags:        document.getElementById('tags').value.trim(),
-    date:        document.getElementById('date').value,
+    amount: parseFloat(document.getElementById('amount').value),
+    date: document.getElementById('date').value,
+    source_account_id: parseInt(document.getElementById('source-account').value),
+    dest_account_id: parseInt(document.getElementById('dest-account').value),
+    category_id: parseInt(document.getElementById('category').value) || null,
+    subcategory_id: parseInt(document.getElementById('subcategory').value) || null,
+    description: document.getElementById('description').value.trim() || null,
+    note: document.getElementById('note').value.trim() || null,
+    tags: document.getElementById('tags').value.trim() || null,
   };
 
   try {
     if (editId) {
-      await api('PUT', `/api/expenses/${editId}`, body);
+      await api('PUT', `/api/transactions/${editId}`, body);
     } else {
-      await api('POST', '/api/expenses', body);
+      await api('POST', '/api/transactions', body);
     }
-    resetForm();
-    loadExpenses();
+    resetTxForm();
+    await loadAccounts();
+    loadTransactions();
   } catch (err) {
     alert('儲存失敗：' + err.message);
   }
 });
 
-document.getElementById('cancel-btn').addEventListener('click', resetForm);
+document.getElementById('cancel-btn').addEventListener('click', resetTxForm);
 
-function resetForm() {
-  document.getElementById('expense-form').reset();
+function resetTxForm() {
+  document.getElementById('tx-form').reset();
   document.getElementById('edit-id').value = '';
   document.getElementById('date').value = today();
-  document.getElementById('form-title').textContent = '新增支出';
+  document.getElementById('form-title').textContent = '新增交易';
   document.getElementById('submit-btn').textContent = '新增';
   document.getElementById('cancel-btn').style.display = 'none';
-  updateSubcategoryDropdown();
+  currentTxType = 'expense';
+  document.querySelectorAll('.tx-type').forEach(b => b.classList.remove('active'));
+  document.querySelector('.tx-type[data-type="expense"]').classList.add('active');
+  populateAccountDropdowns();
 }
 
-// ── Form: Edit ────────────────────────────────────────────────────────────────
+async function startEditTx(id) {
+  const txs = await api('GET', '/api/transactions?from=2000-01-01');
+  const tx = txs.find(t => t.id === id);
+  if (!tx) return;
 
-async function startEdit(id) {
-  const expense = await api('GET', `/api/expenses?from=2000-01-01`);
-  const e = expense.find(x => x.id === id);
-  if (!e) return;
+  const type = getTxType(tx);
+  currentTxType = type;
+  document.querySelectorAll('.tx-type').forEach(b => b.classList.remove('active'));
+  const typeBtn = document.querySelector(`.tx-type[data-type="${type}"]`);
+  if (typeBtn) typeBtn.classList.add('active');
 
-  document.getElementById('edit-id').value  = e.id;
-  document.getElementById('amount').value   = e.amount;
-  document.getElementById('category').value = e.category;
+  populateAccountDropdowns();
 
-  // Update subcategory dropdown based on the selected category, then set value
+  document.getElementById('edit-id').value = tx.id;
+  document.getElementById('amount').value = tx.amount;
+  document.getElementById('date').value = tx.date;
+  document.getElementById('source-account').value = tx.source_account_id;
+  document.getElementById('dest-account').value = tx.dest_account_id;
+  document.getElementById('category').value = tx.category_id || '';
   updateSubcategoryDropdown();
-  document.getElementById('subcategory').value = e.subcategory || '';
+  document.getElementById('subcategory').value = tx.subcategory_id || '';
+  document.getElementById('description').value = tx.description || '';
+  document.getElementById('note').value = tx.note || '';
+  document.getElementById('tags').value = tx.tags || '';
 
-  document.getElementById('note').value     = e.note || '';
-  document.getElementById('tags').value     = e.tags || '';
-  document.getElementById('date').value     = e.date;
-
-  document.getElementById('form-title').textContent = '編輯支出';
+  document.getElementById('form-title').textContent = '編輯交易';
   document.getElementById('submit-btn').textContent = '儲存';
   document.getElementById('cancel-btn').style.display = '';
   document.getElementById('form-section').scrollIntoView({ behavior: 'smooth' });
 }
 
-// ── Delete ────────────────────────────────────────────────────────────────────
-
-async function deleteExpense(id) {
-  if (!confirm('確定刪除這筆支出？')) return;
+async function deleteTx(id) {
+  if (!confirm('確定刪除這筆交易？')) return;
   try {
-    await api('DELETE', `/api/expenses/${id}`);
-    loadExpenses();
+    await api('DELETE', `/api/transactions/${id}`);
+    await loadAccounts();
+    loadTransactions();
   } catch (err) {
     alert('刪除失敗：' + err.message);
   }
 }
 
-// ── Filters ───────────────────────────────────────────────────────────────────
-
-document.getElementById('filter-btn').addEventListener('click', loadExpenses);
+// Filters
+document.getElementById('filter-btn').addEventListener('click', loadTransactions);
 document.getElementById('reset-btn').addEventListener('click', () => {
-  document.getElementById('filter-from').value         = '';
-  document.getElementById('filter-to').value           = '';
-  document.getElementById('filter-category').value     = '';
-  document.getElementById('filter-subcategory').value  = '';
-  updateFilterSubcategoryDropdown();
-  loadExpenses();
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value = '';
+  document.getElementById('filter-type').value = '';
+  document.getElementById('filter-category').value = '';
+  loadTransactions();
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Accounts Page ────────────────────────────────────────────────────────────
+
+async function loadAccountsPage() {
+  await loadAccounts();
+  const container = document.getElementById('account-groups');
+  const groups = {};
+
+  for (const a of accounts) {
+    if (!groups[a.type]) groups[a.type] = [];
+    groups[a.type].push(a);
+  }
+
+  let html = '';
+  const order = ['asset', 'liabilities', 'revenue', 'expense'];
+  for (const type of order) {
+    const accs = groups[type];
+    if (!accs || accs.length === 0) continue;
+    const total = accs.reduce((s, a) => s + a.balance, 0);
+    html += `<div class="account-group"><h3>${ACCOUNT_TYPE_LABELS[type]}</h3>`;
+    for (const a of accs) {
+      const negClass = a.balance < 0 ? 'negative' : '';
+      html += `
+        <div class="account-card">
+          <div class="acc-icon">${a.icon}</div>
+          <div class="acc-info"><div class="acc-name">${escHtml(a.name)}</div></div>
+          <div class="acc-balance ${negClass}">${fmtAmount(a.balance)}</div>
+          <div class="expense-actions">
+            <button class="danger" onclick="deleteAccount(${a.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">刪除</button>
+          </div>
+        </div>`;
+    }
+    html += `<div class="account-total">小計 ${fmtAmount(total)}</div></div>`;
+  }
+
+  // Net worth
+  const assetTotal = (groups.asset || []).reduce((s, a) => s + a.balance, 0);
+  const liabTotal = (groups.liabilities || []).reduce((s, a) => s + a.balance, 0);
+  html += `<div class="account-total" style="background:#d1fae5;color:#065f46;margin-top:1rem">淨資產 ${fmtAmount(assetTotal - liabTotal)}</div>`;
+
+  container.innerHTML = html;
+}
+
+document.getElementById('account-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('acc-name').value.trim(),
+    type: document.getElementById('acc-type').value,
+    icon: document.getElementById('acc-icon').value.trim() || '💰',
+    initial_balance: parseFloat(document.getElementById('acc-balance').value) || 0,
+  };
+  try {
+    await api('POST', '/api/accounts', body);
+    document.getElementById('account-form').reset();
+    await loadAccounts();
+    loadAccountsPage();
+    populateAccountDropdowns();
+  } catch (err) {
+    alert('新增失敗：' + err.message);
+  }
+});
+
+async function deleteAccount(id) {
+  if (!confirm('確定刪除此帳戶？有交易關聯的帳戶無法刪除。')) return;
+  try {
+    await api('DELETE', `/api/accounts/${id}`);
+    await loadAccounts();
+    loadAccountsPage();
+    populateAccountDropdowns();
+  } catch (err) {
+    alert('刪除失敗：' + err.message);
+  }
+}
+
+// ── Recurring Page ───────────────────────────────────────────────────────────
+
+function populateRecurringDropdowns() {
+  const srcSel = document.getElementById('rec-source');
+  const dstSel = document.getElementById('rec-dest');
+  const catSel = document.getElementById('rec-category');
+
+  srcSel.innerHTML = '';
+  dstSel.innerHTML = '';
+  catSel.innerHTML = '<option value="">（無）</option>';
+
+  accounts.forEach(a => {
+    srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name} (${ACCOUNT_TYPE_LABELS[a.type]})</option>`);
+    dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name} (${ACCOUNT_TYPE_LABELS[a.type]})</option>`);
+  });
+  categories.forEach(c => {
+    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
+  });
+
+  document.getElementById('rec-next').value = today();
+}
+
+async function loadRecurringPage() {
+  populateRecurringDropdowns();
+  const items = await api('GET', '/api/recurring');
+  const container = document.getElementById('recurring-list');
+  if (items.length === 0) {
+    container.innerHTML = '<p class="empty">尚無固定交易</p>';
+    return;
+  }
+
+  const todayStr = today();
+  container.innerHTML = items.map(r => {
+    const isDue = r.next_date <= todayStr;
+    return `
+      <div class="recurring-item">
+        <div class="rec-info">
+          <div class="rec-title">${escHtml(r.title)}
+            <span class="badge">${FREQ_LABELS[r.repeat_freq]}</span>
+            ${isDue ? '<span class="badge due">到期</span>' : ''}
+            ${!r.active ? '<span class="badge" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}
+          </div>
+          <div class="rec-detail">${r.source_name} → ${r.dest_name} | 下次：${r.next_date}${r.category_name ? ' | ' + r.category_name : ''}</div>
+        </div>
+        <div class="rec-amount">${fmtAmount(r.amount)}</div>
+        <div class="expense-actions">
+          <button class="danger" onclick="deleteRecurring(${r.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">刪除</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+document.getElementById('recurring-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    title: document.getElementById('rec-title').value.trim(),
+    amount: parseFloat(document.getElementById('rec-amount').value),
+    source_account_id: parseInt(document.getElementById('rec-source').value),
+    dest_account_id: parseInt(document.getElementById('rec-dest').value),
+    category_id: parseInt(document.getElementById('rec-category').value) || null,
+    repeat_freq: document.getElementById('rec-freq').value,
+    next_date: document.getElementById('rec-next').value,
+  };
+  try {
+    await api('POST', '/api/recurring', body);
+    document.getElementById('recurring-form').reset();
+    document.getElementById('rec-next').value = today();
+    loadRecurringPage();
+  } catch (err) {
+    alert('新增失敗：' + err.message);
+  }
+});
+
+document.getElementById('process-recurring-btn').addEventListener('click', async () => {
+  try {
+    const result = await api('POST', '/api/recurring/process');
+    alert(`已處理 ${result.processed} 筆到期交易`);
+    await loadAccounts();
+    loadRecurringPage();
+  } catch (err) {
+    alert('處理失敗：' + err.message);
+  }
+});
+
+async function deleteRecurring(id) {
+  if (!confirm('確定刪除此固定交易？')) return;
+  try {
+    await api('DELETE', `/api/recurring/${id}`);
+    loadRecurringPage();
+  } catch (err) {
+    alert('刪除失敗：' + err.message);
+  }
+}
+
+// ── Reports Page ─────────────────────────────────────────────────────────────
+
+async function loadReportsPage() {
+  await Promise.all([loadMonthlyChart(), loadCategoryChart(), loadNetworthChart()]);
+}
+
+async function loadMonthlyChart() {
+  const data = await api('GET', '/api/reports/monthly?months=6');
+  const container = document.getElementById('monthly-chart');
+  if (data.length === 0) { container.innerHTML = '<p class="empty">尚無資料</p>'; return; }
+
+  const max = Math.max(...data.map(d => Math.max(d.income, d.expense)), 1);
+  container.innerHTML = '<div class="bar-chart">' + data.map(d => {
+    const ew = (d.expense / max * 100).toFixed(1);
+    const iw = (d.income / max * 100).toFixed(1);
+    return `
+      <div class="bar-row">
+        <div class="bar-label">${d.month.slice(5)}</div>
+        <div class="bar-group">
+          <div class="bar expense-bar" style="width:${ew}%">${fmtAmount(d.expense)}</div>
+          <div class="bar income-bar" style="width:${iw}%">${fmtAmount(d.income)}</div>
+        </div>
+      </div>`;
+  }).join('') + '</div>';
+}
+
+async function loadCategoryChart() {
+  const from = document.getElementById('report-from').value;
+  const to = document.getElementById('report-to').value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+
+  const data = await api('GET', '/api/reports/category?' + params);
+  const container = document.getElementById('category-chart');
+  if (data.length === 0) { container.innerHTML = '<p class="empty">尚無支出資料</p>'; return; }
+
+  const total = data.reduce((s, d) => s + d.total, 0);
+
+  // SVG pie chart
+  let cumAngle = 0;
+  const slices = data.map((d, i) => {
+    const pct = d.total / total;
+    const startAngle = cumAngle;
+    cumAngle += pct * 360;
+    return { ...d, pct, startAngle, endAngle: cumAngle, color: PIE_COLORS[i % PIE_COLORS.length] };
+  });
+
+  const r = 70;
+  const cx = 80, cy = 80;
+  let svgPaths = '';
+  for (const s of slices) {
+    if (s.pct >= 0.999) {
+      svgPaths += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${s.color}"/>`;
+      continue;
+    }
+    const a1 = (s.startAngle - 90) * Math.PI / 180;
+    const a2 = (s.endAngle - 90) * Math.PI / 180;
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2);
+    const large = s.pct > 0.5 ? 1 : 0;
+    svgPaths += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} Z" fill="${s.color}"/>`;
+  }
+
+  const legend = slices.map(s =>
+    `<div class="legend-item">
+      <div class="legend-dot" style="background:${s.color}"></div>
+      <div class="legend-label">${s.icon || ''} ${s.name || '未分類'}</div>
+      <div class="legend-value">${fmtAmount(s.total)} (${(s.pct * 100).toFixed(1)}%)</div>
+    </div>`
+  ).join('');
+
+  container.innerHTML = `
+    <div class="pie-wrapper">
+      <svg class="pie-svg" viewBox="0 0 160 160">${svgPaths}</svg>
+      <div class="pie-legend">${legend}</div>
+    </div>`;
+}
+
+document.getElementById('report-filter-btn').addEventListener('click', loadCategoryChart);
+
+async function loadNetworthChart() {
+  const data = await api('GET', '/api/reports/networth?months=12');
+  const container = document.getElementById('networth-chart');
+  if (data.length === 0) { container.innerHTML = '<p class="empty">尚無資料</p>'; return; }
+
+  const values = data.map(d => d.net_worth);
+  const minV = Math.min(...values, 0);
+  const maxV = Math.max(...values, 1);
+  const range = maxV - minV || 1;
+  const w = 600, h = 160, pad = 30;
+
+  const points = data.map((d, i) => {
+    const x = pad + (i / Math.max(data.length - 1, 1)) * (w - 2 * pad);
+    const y = h - pad - ((d.net_worth - minV) / range) * (h - 2 * pad);
+    return { x, y, ...d };
+  });
+
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  const areaD = pathD + ` L${points[points.length - 1].x},${h - pad} L${points[0].x},${h - pad} Z`;
+
+  const labels = points.filter((_, i) => i === 0 || i === points.length - 1 || i % 2 === 0)
+    .map(p => `<text class="line-label" x="${p.x}" y="${h - 5}" text-anchor="middle">${p.month.slice(5)}</text>`)
+    .join('');
+
+  // Grid lines
+  const gridCount = 3;
+  let gridLines = '';
+  for (let i = 0; i <= gridCount; i++) {
+    const y = pad + (i / gridCount) * (h - 2 * pad);
+    const val = maxV - (i / gridCount) * range;
+    gridLines += `<line class="line-grid" x1="${pad}" y1="${y}" x2="${w - pad}" y2="${y}"/>`;
+    gridLines += `<text class="line-label" x="${pad - 5}" y="${y + 4}" text-anchor="end">${(val / 1000).toFixed(0)}k</text>`;
+  }
+
+  container.innerHTML = `
+    <div class="line-chart-wrap">
+      <svg viewBox="0 0 ${w} ${h}">
+        ${gridLines}
+        <path class="line-area" d="${areaD}" fill="#818cf8"/>
+        <path class="line-path" d="${pathD}" stroke="#4f46e5"/>
+        ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#4f46e5"/>`).join('')}
+        ${labels}
+      </svg>
+    </div>`;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
 
 (async () => {
-  await loadCategories();
-  await loadExpenses();
+  await Promise.all([loadAccounts(), loadCategories()]);
+  initTxType();
+  populateAccountDropdowns();
+  initTabs();
+  await loadTransactions();
 })();
