@@ -278,6 +278,59 @@ button.danger:hover { background: #dc2626; }
 .line-path { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 .line-area { opacity: 0.15; }
 
+/* Budget */
+.budget-month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #4f46e5;
+}
+.budget-month-nav button { padding: 0.3rem 0.8rem; }
+
+.budget-card {
+  background: white;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  border-left: 4px solid #4f46e5;
+}
+.budget-card.warn { border-left-color: #f59e0b; }
+.budget-card.over { border-left-color: #ef4444; }
+
+.budget-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.budget-label { font-weight: 600; font-size: 0.95rem; }
+.budget-pct { font-weight: 700; font-size: 1rem; color: #4f46e5; }
+.budget-pct.warn { color: #f59e0b; }
+.budget-pct.over { color: #ef4444; }
+
+.budget-bar-track {
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+.budget-bar-fill {
+  height: 100%;
+  background: #4f46e5;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+.budget-bar-fill.warn { background: #f59e0b; }
+.budget-bar-fill.over { background: #ef4444; }
+
+.budget-detail {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
 @media (max-width: 480px) {
   .row { flex-direction: column; }
   .filter-bar input, .filter-bar select { min-width: 100px; }

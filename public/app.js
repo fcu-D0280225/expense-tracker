@@ -41,6 +41,7 @@ function initTabs() {
 
     if (hash === 'accounts') loadAccountsPage();
     if (hash === 'recurring') loadRecurringPage();
+    if (hash === 'budgets') loadBudgetsPage();
     if (hash === 'reports') loadReportsPage();
   };
   window.addEventListener('hashchange', navigate);
@@ -142,12 +143,14 @@ document.getElementById('category').addEventListener('change', updateSubcategory
 // ── Transaction List ─────────────────────────────────────────────────────────
 
 async function loadTransactions() {
+  const q = document.getElementById('filter-q').value.trim();
   const from = document.getElementById('filter-from').value;
   const to = document.getElementById('filter-to').value;
   const type = document.getElementById('filter-type').value;
   const catId = document.getElementById('filter-category').value;
 
   const params = new URLSearchParams();
+  if (q) params.set('q', q);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
   if (type) params.set('type', type);
@@ -155,6 +158,33 @@ async function loadTransactions() {
 
   const txs = await api('GET', '/api/transactions?' + params);
   renderTransactions(txs);
+
+  // Show trend chart when searching
+  const trendSection = document.getElementById('search-trend');
+  if (q) {
+    trendSection.style.display = '';
+    loadTrendChart(q);
+  } else {
+    trendSection.style.display = 'none';
+  }
+}
+
+async function loadTrendChart(q) {
+  const data = await api('GET', '/api/transactions/trend?q=' + encodeURIComponent(q));
+  const container = document.getElementById('trend-chart');
+  if (data.length === 0) { container.innerHTML = '<p class="empty">無趨勢資料</p>'; return; }
+
+  const max = Math.max(...data.map(d => d.total), 1);
+  container.innerHTML = '<div class="bar-chart">' + data.map(d => {
+    const w = (d.total / max * 100).toFixed(1);
+    return `
+      <div class="bar-row">
+        <div class="bar-label">${d.month}</div>
+        <div class="bar-group">
+          <div class="bar expense-bar" style="width:${w}%">${fmtAmount(d.total)} (${d.count}筆)</div>
+        </div>
+      </div>`;
+  }).join('') + '</div>';
 }
 
 function getTxType(tx) {
@@ -302,6 +332,7 @@ async function deleteTx(id) {
 // Filters
 document.getElementById('filter-btn').addEventListener('click', loadTransactions);
 document.getElementById('reset-btn').addEventListener('click', () => {
+  document.getElementById('filter-q').value = '';
   document.getElementById('filter-from').value = '';
   document.getElementById('filter-to').value = '';
   document.getElementById('filter-type').value = '';
@@ -602,6 +633,100 @@ async function loadNetworthChart() {
       </svg>
     </div>`;
 }
+
+// ── Budgets Page ────────────────────────────────────────────────────────────
+
+let currentBudgetMonth = new Date().toISOString().slice(0, 7);
+
+function populateBudgetDropdowns() {
+  const catSel = document.getElementById('budget-category');
+  catSel.innerHTML = '<option value="">整體預算</option>';
+  categories.forEach(c => {
+    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
+  });
+  document.getElementById('budget-month').value = currentBudgetMonth;
+}
+
+async function loadBudgetsPage() {
+  populateBudgetDropdowns();
+  await renderBudgetStatus();
+}
+
+async function renderBudgetStatus() {
+  document.getElementById('budget-month-label').textContent = currentBudgetMonth;
+  const data = await api('GET', '/api/budgets/status?month=' + currentBudgetMonth);
+  const container = document.getElementById('budget-status');
+
+  if (data.budgets.length === 0) {
+    container.innerHTML = '<p class="empty">尚未設定預算</p>';
+    return;
+  }
+
+  container.innerHTML = data.budgets.map(b => {
+    const label = b.category_id ? `${b.category_icon || ''} ${b.category_name}` : '💰 整體預算';
+    const pct = Math.min(b.pct, 100);
+    const overBudget = b.pct > 100;
+    const warning = b.pct >= 100 ? 'over' : b.pct >= 80 ? 'warn' : '';
+    return `
+      <div class="budget-card ${warning}">
+        <div class="budget-header">
+          <span class="budget-label">${label}</span>
+          <span class="budget-pct ${warning}">${b.pct.toFixed(0)}%</span>
+        </div>
+        <div class="budget-bar-track">
+          <div class="budget-bar-fill ${warning}" style="width:${pct}%"></div>
+        </div>
+        <div class="budget-detail">
+          <span>已用 ${fmtAmount(b.spent)} / ${fmtAmount(b.amount)}</span>
+          <span>${overBudget ? '超支 ' + fmtAmount(Math.abs(b.remaining)) : '剩餘 ' + fmtAmount(b.remaining)}</span>
+        </div>
+        <div class="expense-actions" style="margin-top:0.4rem">
+          <button class="danger" onclick="deleteBudget(${b.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">刪除</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+document.getElementById('budget-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    category_id: parseInt(document.getElementById('budget-category').value) || null,
+    amount: parseFloat(document.getElementById('budget-amount').value),
+    month: document.getElementById('budget-month').value,
+  };
+  try {
+    await api('POST', '/api/budgets', body);
+    document.getElementById('budget-amount').value = '';
+    currentBudgetMonth = body.month;
+    await renderBudgetStatus();
+  } catch (err) {
+    alert('設定失敗：' + err.message);
+  }
+});
+
+async function deleteBudget(id) {
+  if (!confirm('確定刪除此預算設定？')) return;
+  try {
+    await api('DELETE', `/api/budgets/${id}`);
+    await renderBudgetStatus();
+  } catch (err) {
+    alert('刪除失敗：' + err.message);
+  }
+}
+
+document.getElementById('budget-prev').addEventListener('click', () => {
+  const d = new Date(currentBudgetMonth + '-01');
+  d.setMonth(d.getMonth() - 1);
+  currentBudgetMonth = d.toISOString().slice(0, 7);
+  renderBudgetStatus();
+});
+
+document.getElementById('budget-next').addEventListener('click', () => {
+  const d = new Date(currentBudgetMonth + '-01');
+  d.setMonth(d.getMonth() + 1);
+  currentBudgetMonth = d.toISOString().slice(0, 7);
+  renderBudgetStatus();
+});
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 

@@ -58,6 +58,16 @@ db.exec(`
     FOREIGN KEY (category_id) REFERENCES categories(id)
   );
 
+  CREATE TABLE IF NOT EXISTS budgets (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id INTEGER,
+    amount      REAL NOT NULL,
+    month       TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (category_id) REFERENCES categories(id),
+    UNIQUE(category_id, month)
+  );
+
   CREATE TABLE IF NOT EXISTS recurring (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     title             TEXT NOT NULL,
@@ -342,7 +352,7 @@ app.delete('/api/accounts/:id', (req, res) => {
 // ── Transactions API ─────────────────────────────────────────────────────────
 
 app.get('/api/transactions', (req, res) => {
-  const { from, to, category_id, account_id, type, limit: lim } = req.query;
+  const { from, to, category_id, account_id, type, q, limit: lim } = req.query;
   let query = `
     SELECT t.*,
       sa.name as source_name, sa.type as source_type, sa.icon as source_icon,
@@ -358,6 +368,11 @@ app.get('/api/transactions', (req, res) => {
   `;
   const params = [];
 
+  if (q) {
+    query += ' AND (t.description LIKE ? OR t.note LIKE ? OR t.tags LIKE ? OR c.name LIKE ? OR sc.name LIKE ?)';
+    const like = `%${q}%`;
+    params.push(like, like, like, like, like);
+  }
   if (from) { query += ' AND t.date >= ?'; params.push(from); }
   if (to)   { query += ' AND t.date <= ?'; params.push(to); }
   if (category_id) { query += ' AND t.category_id = ?'; params.push(category_id); }
@@ -377,6 +392,27 @@ app.get('/api/transactions', (req, res) => {
   if (lim) { query += ' LIMIT ?'; params.push(parseInt(lim)); }
 
   res.json(db.prepare(query).all(...params));
+});
+
+// Search trend: group transactions by month for a given keyword
+app.get('/api/transactions/trend', (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.status(400).json({ error: 'q parameter is required' });
+
+  const rows = db.prepare(`
+    SELECT strftime('%Y-%m', t.date) as month,
+      SUM(t.amount) as total,
+      COUNT(*) as count
+    FROM transactions t
+    LEFT JOIN accounts sa ON t.source_account_id = sa.id
+    LEFT JOIN accounts da ON t.dest_account_id = da.id
+    WHERE (t.description LIKE ? OR t.note LIKE ?)
+      AND sa.type = 'asset' AND da.type = 'expense'
+    GROUP BY month
+    ORDER BY month
+  `).all(`%${q}%`, `%${q}%`);
+
+  res.json(rows);
 });
 
 app.post('/api/transactions', (req, res) => {
@@ -605,6 +641,112 @@ app.get('/api/reports/networth', (req, res) => {
   });
 
   res.json(result);
+});
+
+// ── Budgets API ─────────────────────────────────────────────────────────────
+
+app.get('/api/budgets', (req, res) => {
+  const { month } = req.query;
+  let query = `
+    SELECT b.*, c.name as category_name, c.icon as category_icon
+    FROM budgets b
+    LEFT JOIN categories c ON b.category_id = c.id
+  `;
+  const params = [];
+  if (month) { query += ' WHERE b.month = ?'; params.push(month); }
+  query += ' ORDER BY b.category_id IS NULL DESC, b.category_id';
+  res.json(db.prepare(query).all(...params));
+});
+
+app.post('/api/budgets', (req, res) => {
+  const { category_id, amount, month } = req.body;
+  if (!amount || !month) return res.status(400).json({ error: 'amount and month are required' });
+  try {
+    const result = db.prepare(
+      'INSERT INTO budgets (category_id, amount, month) VALUES (?, ?, ?)'
+    ).run(category_id || null, amount, month);
+    const budget = db.prepare(`
+      SELECT b.*, c.name as category_name, c.icon as category_icon
+      FROM budgets b LEFT JOIN categories c ON b.category_id = c.id
+      WHERE b.id = ?
+    `).get(result.lastInsertRowid);
+    res.status(201).json(budget);
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) {
+      return res.status(409).json({ error: 'Budget already exists for this category/month' });
+    }
+    throw e;
+  }
+});
+
+// Budget status must be before :id routes
+app.get('/api/budgets/status', (req, res) => {
+  const month = req.query.month || new Date().toISOString().slice(0, 7);
+  const monthStart = month + '-01';
+  const monthEnd = month + '-31';
+
+  // Get all budgets for this month
+  const budgets = db.prepare(`
+    SELECT b.*, c.name as category_name, c.icon as category_icon
+    FROM budgets b
+    LEFT JOIN categories c ON b.category_id = c.id
+    WHERE b.month = ?
+    ORDER BY b.category_id IS NULL DESC, b.category_id
+  `).all(month);
+
+  // Get actual spending for this month
+  const totalSpent = db.prepare(`
+    SELECT COALESCE(SUM(t.amount), 0) as total
+    FROM transactions t
+    JOIN accounts sa ON t.source_account_id = sa.id
+    JOIN accounts da ON t.dest_account_id = da.id
+    WHERE sa.type = 'asset' AND da.type = 'expense'
+      AND t.date >= ? AND t.date <= ?
+  `).get(monthStart, monthEnd).total;
+
+  // Get spending by category
+  const categorySpending = db.prepare(`
+    SELECT t.category_id, COALESCE(SUM(t.amount), 0) as total
+    FROM transactions t
+    JOIN accounts sa ON t.source_account_id = sa.id
+    JOIN accounts da ON t.dest_account_id = da.id
+    WHERE sa.type = 'asset' AND da.type = 'expense'
+      AND t.date >= ? AND t.date <= ?
+    GROUP BY t.category_id
+  `).all(monthStart, monthEnd);
+
+  const spendingMap = {};
+  for (const row of categorySpending) {
+    spendingMap[row.category_id] = row.total;
+  }
+
+  const result = budgets.map(b => {
+    const spent = b.category_id ? (spendingMap[b.category_id] || 0) : totalSpent;
+    const remaining = b.amount - spent;
+    const pct = b.amount > 0 ? (spent / b.amount) * 100 : 0;
+    return { ...b, spent, remaining, pct };
+  });
+
+  res.json({ month, total_spent: totalSpent, budgets: result });
+});
+
+app.put('/api/budgets/:id', (req, res) => {
+  const old = db.prepare('SELECT * FROM budgets WHERE id = ?').get(req.params.id);
+  if (!old) return res.status(404).json({ error: 'Not found' });
+  const { amount } = req.body;
+  db.prepare('UPDATE budgets SET amount = ? WHERE id = ?').run(amount || old.amount, req.params.id);
+  const budget = db.prepare(`
+    SELECT b.*, c.name as category_name, c.icon as category_icon
+    FROM budgets b LEFT JOIN categories c ON b.category_id = c.id
+    WHERE b.id = ?
+  `).get(req.params.id);
+  res.json(budget);
+});
+
+app.delete('/api/budgets/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM budgets WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  res.json({ deleted: true });
 });
 
 // ── CSV Export (adapted for transactions) ────────────────────────────────────
