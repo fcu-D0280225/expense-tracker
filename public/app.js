@@ -1,7 +1,7 @@
 'use strict';
 
 const CATEGORY_ICONS = {};
-let categories = [];
+let categories = []; // each: { id, name, icon, subcategories: [{id, name}] }
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -27,17 +27,61 @@ async function loadCategories() {
   categories = await api('GET', '/api/categories');
   categories.forEach(c => { CATEGORY_ICONS[c.name] = c.icon || '📦'; });
 
+  // Form: category dropdown
   const catSel = document.getElementById('category');
-  const filterSel = document.getElementById('filter-category');
-
   catSel.innerHTML = '';
-  filterSel.innerHTML = '<option value="">全部</option>';
-
   categories.forEach(c => {
-    catSel.insertAdjacentHTML('beforeend', `<option value="${c.name}">${c.icon || ''} ${c.name}</option>`);
-    filterSel.insertAdjacentHTML('beforeend', `<option value="${c.name}">${c.icon || ''} ${c.name}</option>`);
+    catSel.insertAdjacentHTML('beforeend',
+      `<option value="${c.name}">${c.icon || ''} ${c.name}</option>`);
   });
+
+  // Filter: category dropdown
+  const filterCatSel = document.getElementById('filter-category');
+  filterCatSel.innerHTML = '<option value="">全部</option>';
+  categories.forEach(c => {
+    filterCatSel.insertAdjacentHTML('beforeend',
+      `<option value="${c.name}">${c.icon || ''} ${c.name}</option>`);
+  });
+
+  // Populate subcategory for the initially selected category
+  updateSubcategoryDropdown();
+  updateFilterSubcategoryDropdown();
 }
+
+function updateSubcategoryDropdown() {
+  const catName = document.getElementById('category').value;
+  const subSel = document.getElementById('subcategory');
+  subSel.innerHTML = '<option value="">（無）</option>';
+
+  const cat = categories.find(c => c.name === catName);
+  if (cat && cat.subcategories.length > 0) {
+    cat.subcategories.forEach(s => {
+      subSel.insertAdjacentHTML('beforeend',
+        `<option value="${s.name}">${s.name}</option>`);
+    });
+  }
+}
+
+function updateFilterSubcategoryDropdown() {
+  const catName = document.getElementById('filter-category').value;
+  const subSel = document.getElementById('filter-subcategory');
+  subSel.innerHTML = '<option value="">全部</option>';
+
+  if (!catName) return;
+  const cat = categories.find(c => c.name === catName);
+  if (cat && cat.subcategories.length > 0) {
+    cat.subcategories.forEach(s => {
+      subSel.insertAdjacentHTML('beforeend',
+        `<option value="${s.name}">${s.name}</option>`);
+    });
+  }
+}
+
+document.getElementById('category').addEventListener('change', updateSubcategoryDropdown);
+document.getElementById('filter-category').addEventListener('change', () => {
+  updateFilterSubcategoryDropdown();
+  document.getElementById('filter-subcategory').value = '';
+});
 
 // ── Expense List ──────────────────────────────────────────────────────────────
 
@@ -45,11 +89,13 @@ async function loadExpenses() {
   const from = document.getElementById('filter-from').value;
   const to   = document.getElementById('filter-to').value;
   const cat  = document.getElementById('filter-category').value;
+  const sub  = document.getElementById('filter-subcategory').value;
 
   const params = new URLSearchParams();
   if (from) params.set('from', from);
   if (to)   params.set('to', to);
   if (cat)  params.set('category', cat);
+  if (sub)  params.set('subcategory', sub);
 
   const expenses = await api('GET', '/api/expenses?' + params);
   renderExpenses(expenses);
@@ -72,12 +118,13 @@ function renderExpenses(expenses) {
     const icon = CATEGORY_ICONS[e.category] || '📦';
     const tags = e.tags ? `<span class="expense-tags">${e.tags.split(',').map(t => '#' + t.trim()).join(' ')}</span>` : '';
     const note = e.note ? `${e.note}　` : '';
+    const subLabel = e.subcategory ? ` / ${e.subcategory}` : '';
     return `
       <div class="expense-item" data-id="${e.id}">
         <div class="expense-icon">${icon}</div>
         <div class="expense-info">
           <div class="expense-main">
-            <span class="expense-category">${e.category}</span>
+            <span class="expense-category">${e.category}${subLabel}</span>
             <span class="expense-amount">${fmtAmount(e.amount)}</span>
           </div>
           <div class="expense-sub">${e.date}　${note}${tags}</div>
@@ -98,11 +145,12 @@ document.getElementById('expense-form').addEventListener('submit', async e => {
   e.preventDefault();
   const editId = document.getElementById('edit-id').value;
   const body = {
-    amount:   parseFloat(document.getElementById('amount').value),
-    category: document.getElementById('category').value,
-    note:     document.getElementById('note').value.trim(),
-    tags:     document.getElementById('tags').value.trim(),
-    date:     document.getElementById('date').value,
+    amount:      parseFloat(document.getElementById('amount').value),
+    category:    document.getElementById('category').value,
+    subcategory: document.getElementById('subcategory').value || null,
+    note:        document.getElementById('note').value.trim(),
+    tags:        document.getElementById('tags').value.trim(),
+    date:        document.getElementById('date').value,
   };
 
   try {
@@ -127,6 +175,7 @@ function resetForm() {
   document.getElementById('form-title').textContent = '新增支出';
   document.getElementById('submit-btn').textContent = '新增';
   document.getElementById('cancel-btn').style.display = 'none';
+  updateSubcategoryDropdown();
 }
 
 // ── Form: Edit ────────────────────────────────────────────────────────────────
@@ -139,6 +188,11 @@ async function startEdit(id) {
   document.getElementById('edit-id').value  = e.id;
   document.getElementById('amount').value   = e.amount;
   document.getElementById('category').value = e.category;
+
+  // Update subcategory dropdown based on the selected category, then set value
+  updateSubcategoryDropdown();
+  document.getElementById('subcategory').value = e.subcategory || '';
+
   document.getElementById('note').value     = e.note || '';
   document.getElementById('tags').value     = e.tags || '';
   document.getElementById('date').value     = e.date;
@@ -165,9 +219,11 @@ async function deleteExpense(id) {
 
 document.getElementById('filter-btn').addEventListener('click', loadExpenses);
 document.getElementById('reset-btn').addEventListener('click', () => {
-  document.getElementById('filter-from').value    = '';
-  document.getElementById('filter-to').value      = '';
-  document.getElementById('filter-category').value = '';
+  document.getElementById('filter-from').value         = '';
+  document.getElementById('filter-to').value           = '';
+  document.getElementById('filter-category').value     = '';
+  document.getElementById('filter-subcategory').value  = '';
+  updateFilterSubcategoryDropdown();
   loadExpenses();
 });
 

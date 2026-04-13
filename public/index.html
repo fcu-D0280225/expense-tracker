@@ -25,9 +25,14 @@
           <label>日期<input type="date" id="date" required></label>
         </div>
         <div class="row">
-          <label>類別
+          <label>大分類
             <select id="category" required></select>
           </label>
+          <label>小分類
+            <select id="subcategory"><option value="">（無）</option></select>
+          </label>
+        </div>
+        <div class="row">
           <label>標籤<input type="text" id="tags" placeholder="逗號分隔"></label>
         </div>
         <label>備註<input type="text" id="note" placeholder="選填"></label>
@@ -42,8 +47,13 @@
     <section class="filter-bar">
       <label>從 <input type="date" id="filter-from"></label>
       <label>到 <input type="date" id="filter-to"></label>
-      <label>類別
+      <label>大分類
         <select id="filter-category">
+          <option value="">全部</option>
+        </select>
+      </label>
+      <label>小分類
+        <select id="filter-subcategory">
           <option value="">全部</option>
         </select>
       </label>
