@@ -17,6 +17,7 @@
       <a class="tab" href="#recurring" data-tab="recurring">固定支出</a>
       <a class="tab" href="#budgets" data-tab="budgets">預算</a>
       <a class="tab" href="#reports" data-tab="reports">報表</a>
+      <a class="tab" href="#trips" data-tab="trips">旅遊</a>
     </nav>
   </header>
 
@@ -225,6 +226,125 @@
       <div class="report-section">
         <h2>淨資產走勢</h2>
         <div id="networth-chart" class="chart-container"></div>
+      </div>
+    </section>
+    <!-- ═══ Trips Tab ═══ -->
+    <section id="page-trips" class="page">
+      <!-- Trip list view -->
+      <div id="trips-list-view">
+        <div class="form-card">
+          <h2>建立旅遊專案</h2>
+          <form id="trip-form">
+            <div class="row">
+              <label>名稱<input type="text" id="trip-name" required placeholder="例：日本旅遊"></label>
+              <label>目的地<input type="text" id="trip-dest" placeholder="例：東京"></label>
+            </div>
+            <div class="row">
+              <label>開始日期<input type="date" id="trip-start"></label>
+              <label>結束日期<input type="date" id="trip-end"></label>
+            </div>
+            <div class="row">
+              <label>總預算<input type="number" id="trip-budget" step="1" min="0" value="0"></label>
+              <label>幣別
+                <select id="trip-currency">
+                  <option value="TWD">TWD 新台幣</option>
+                  <option value="JPY">JPY 日圓</option>
+                  <option value="USD">USD 美元</option>
+                  <option value="EUR">EUR 歐元</option>
+                  <option value="KRW">KRW 韓圓</option>
+                  <option value="HKD">HKD 港幣</option>
+                </select>
+              </label>
+            </div>
+            <label>建立者<input type="text" id="trip-creator" placeholder="你的名字"></label>
+            <div class="form-actions">
+              <button type="submit">建立旅遊專案</button>
+            </div>
+          </form>
+        </div>
+        <div id="trips-list"></div>
+      </div>
+
+      <!-- Trip detail view (shown when a trip is selected) -->
+      <div id="trips-detail-view" style="display:none">
+        <div class="trip-detail-header">
+          <button class="secondary" id="trip-back-btn">← 返回</button>
+          <h2 id="trip-detail-title"></h2>
+          <p id="trip-detail-meta" class="trip-meta"></p>
+        </div>
+
+        <!-- Join by code -->
+        <div class="form-card">
+          <h3>加入成員</h3>
+          <form id="trip-member-form">
+            <div class="row">
+              <label>成員名稱<input type="text" id="member-name" required placeholder="名稱"></label>
+              <label>Email（選填）<input type="email" id="member-email" placeholder="email"></label>
+            </div>
+            <div class="form-actions">
+              <button type="submit">加入</button>
+            </div>
+          </form>
+          <div id="trip-members-list"></div>
+        </div>
+
+        <!-- Add expense -->
+        <div class="form-card" id="trip-expense-form-card">
+          <h3 id="trip-expense-form-title">新增費用</h3>
+          <form id="trip-expense-form">
+            <input type="hidden" id="trip-expense-edit-id">
+            <div class="row">
+              <label>說明<input type="text" id="texp-desc" placeholder="例：晚餐"></label>
+              <label>金額<input type="number" id="texp-amount" step="0.01" min="0.01" required placeholder="0"></label>
+            </div>
+            <div class="row">
+              <label>幣別
+                <select id="texp-currency">
+                  <option value="TWD">TWD</option>
+                  <option value="JPY">JPY</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="KRW">KRW</option>
+                  <option value="HKD">HKD</option>
+                </select>
+              </label>
+              <label>匯率（→TWD）<input type="number" id="texp-rate" step="0.0001" min="0.0001" value="1"></label>
+            </div>
+            <div class="row">
+              <label>誰付的
+                <select id="texp-paid-by" required></select>
+              </label>
+              <label>日期<input type="date" id="texp-date" required></label>
+            </div>
+            <div class="row">
+              <label>分攤方式
+                <select id="texp-split-type">
+                  <option value="equal">平均分攤</option>
+                  <option value="paid_by_one">付款者自付</option>
+                  <option value="custom">自訂金額</option>
+                </select>
+              </label>
+            </div>
+            <div id="texp-custom-splits" style="display:none"></div>
+            <div class="form-actions">
+              <button type="submit" id="texp-submit-btn">新增費用</button>
+              <button type="button" id="texp-cancel-btn" class="secondary" style="display:none">取消</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Expenses list -->
+        <div class="report-section">
+          <h3>費用清單</h3>
+          <div id="trip-expenses-list"></div>
+        </div>
+
+        <!-- Settlement -->
+        <div class="report-section">
+          <h3>平攤計算</h3>
+          <button id="calc-settlement-btn" class="secondary">重新計算</button>
+          <div id="trip-settlement"></div>
+        </div>
       </div>
     </section>
   </main>

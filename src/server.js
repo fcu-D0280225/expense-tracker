@@ -68,6 +68,44 @@ db.exec(`
     UNIQUE(category_id, month)
   );
 
+  CREATE TABLE IF NOT EXISTS trips (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    destination TEXT,
+    start_date  TEXT,
+    end_date    TEXT,
+    budget      REAL DEFAULT 0,
+    currency    TEXT DEFAULT 'TWD',
+    created_by  TEXT,
+    created_at  TEXT DEFAULT (datetime('now','localtime'))
+  );
+
+  CREATE TABLE IF NOT EXISTS trip_members (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_id   INTEGER NOT NULL,
+    name      TEXT NOT NULL,
+    email     TEXT,
+    join_code TEXT UNIQUE NOT NULL,
+    FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS trip_expenses (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_id       INTEGER NOT NULL,
+    paid_by       INTEGER NOT NULL,
+    amount        REAL NOT NULL,
+    currency      TEXT DEFAULT 'TWD',
+    exchange_rate REAL DEFAULT 1,
+    category_id   INTEGER,
+    description   TEXT,
+    date          TEXT NOT NULL,
+    split_type    TEXT NOT NULL DEFAULT 'equal' CHECK(split_type IN ('equal','custom','paid_by_one')),
+    splits        TEXT,
+    created_at    TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+    FOREIGN KEY (paid_by) REFERENCES trip_members(id)
+  );
+
   CREATE TABLE IF NOT EXISTS recurring (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     title             TEXT NOT NULL,
@@ -785,6 +823,229 @@ app.get('/api/export', (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="transactions-${days}d.csv"`);
   res.send(csv);
+});
+
+// ── Trips API ────────────────────────────────────────────────────────────────
+
+function generateJoinCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+function computeSettlement(members, expenses) {
+  // net[memberId] = total_paid - total_owed (in base currency TWD)
+  const net = {};
+  members.forEach(m => { net[m.id] = 0; });
+
+  for (const exp of expenses) {
+    const baseAmount = exp.amount * (exp.exchange_rate || 1);
+    // Credit the payer
+    if (net[exp.paid_by] !== undefined) net[exp.paid_by] += baseAmount;
+
+    // Debit each person their share
+    const splits = exp.splits ? JSON.parse(exp.splits) : null;
+    if (exp.split_type === 'equal') {
+      const share = baseAmount / members.length;
+      members.forEach(m => { if (net[m.id] !== undefined) net[m.id] -= share; });
+    } else if (exp.split_type === 'paid_by_one') {
+      // Only the payer bears the full cost
+      if (net[exp.paid_by] !== undefined) net[exp.paid_by] -= baseAmount;
+    } else if (exp.split_type === 'custom' && splits) {
+      for (const [mid, share] of Object.entries(splits)) {
+        if (net[parseInt(mid)] !== undefined) net[parseInt(mid)] -= parseFloat(share) * (exp.exchange_rate || 1);
+      }
+    }
+  }
+
+  // Debt minimization: greedy matching
+  const creditors = Object.entries(net).filter(([, v]) => v > 0.005).map(([id, v]) => ({ id: parseInt(id), amount: v }));
+  const debtors   = Object.entries(net).filter(([, v]) => v < -0.005).map(([id, v]) => ({ id: parseInt(id), amount: -v }));
+  creditors.sort((a, b) => b.amount - a.amount);
+  debtors.sort((a, b) => b.amount - a.amount);
+
+  const transfers = [];
+  let ci = 0, di = 0;
+  while (ci < creditors.length && di < debtors.length) {
+    const amt = Math.min(creditors[ci].amount, debtors[di].amount);
+    if (amt > 0.005) {
+      transfers.push({ from: debtors[di].id, to: creditors[ci].id, amount: Math.round(amt) });
+    }
+    creditors[ci].amount -= amt;
+    debtors[di].amount -= amt;
+    if (creditors[ci].amount < 0.005) ci++;
+    if (debtors[di].amount < 0.005) di++;
+  }
+
+  return { net, transfers };
+}
+
+// List trips
+app.get('/api/trips', (req, res) => {
+  const trips = db.prepare('SELECT * FROM trips ORDER BY start_date DESC, id DESC').all();
+  res.json(trips);
+});
+
+// Create trip
+app.post('/api/trips', (req, res) => {
+  const { name, destination, start_date, end_date, budget, currency, created_by } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  const result = db.prepare(
+    'INSERT INTO trips (name, destination, start_date, end_date, budget, currency, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(name, destination || null, start_date || null, end_date || null, budget || 0, currency || 'TWD', created_by || null);
+  res.status(201).json(db.prepare('SELECT * FROM trips WHERE id = ?').get(result.lastInsertRowid));
+});
+
+// Get trip detail
+app.get('/api/trips/:id', (req, res) => {
+  const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(req.params.id);
+  if (!trip) return res.status(404).json({ error: 'Not found' });
+  const members = db.prepare('SELECT * FROM trip_members WHERE trip_id = ? ORDER BY id').all(req.params.id);
+  const expenses = db.prepare(`
+    SELECT te.*, tm.name as paid_by_name
+    FROM trip_expenses te
+    LEFT JOIN trip_members tm ON te.paid_by = tm.id
+    WHERE te.trip_id = ?
+    ORDER BY te.date DESC, te.id DESC
+  `).all(req.params.id);
+  res.json({ ...trip, members, expenses });
+});
+
+// Update trip
+app.put('/api/trips/:id', (req, res) => {
+  const old = db.prepare('SELECT * FROM trips WHERE id = ?').get(req.params.id);
+  if (!old) return res.status(404).json({ error: 'Not found' });
+  const { name, destination, start_date, end_date, budget, currency } = req.body;
+  db.prepare('UPDATE trips SET name=?, destination=?, start_date=?, end_date=?, budget=?, currency=? WHERE id=?')
+    .run(name || old.name, destination ?? old.destination, start_date ?? old.start_date,
+         end_date ?? old.end_date, budget ?? old.budget, currency || old.currency, req.params.id);
+  res.json(db.prepare('SELECT * FROM trips WHERE id = ?').get(req.params.id));
+});
+
+// Delete trip
+app.delete('/api/trips/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM trips WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  res.json({ deleted: true });
+});
+
+// Add member to trip
+app.post('/api/trips/:id/members', (req, res) => {
+  const trip = db.prepare('SELECT id FROM trips WHERE id = ?').get(req.params.id);
+  if (!trip) return res.status(404).json({ error: 'Trip not found' });
+  const { name, email } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+
+  let joinCode;
+  let attempts = 0;
+  do {
+    joinCode = generateJoinCode();
+    attempts++;
+  } while (db.prepare('SELECT id FROM trip_members WHERE join_code = ?').get(joinCode) && attempts < 10);
+
+  const result = db.prepare(
+    'INSERT INTO trip_members (trip_id, name, email, join_code) VALUES (?, ?, ?, ?)'
+  ).run(req.params.id, name, email || null, joinCode);
+  res.status(201).json(db.prepare('SELECT * FROM trip_members WHERE id = ?').get(result.lastInsertRowid));
+});
+
+// Remove member from trip
+app.delete('/api/trips/:id/members/:mid', (req, res) => {
+  const hasExpenses = db.prepare(
+    'SELECT COUNT(*) as c FROM trip_expenses WHERE trip_id = ? AND (paid_by = ?)'
+  ).get(req.params.id, req.params.mid).c;
+  if (hasExpenses > 0) {
+    return res.status(409).json({ error: '此成員有費用記錄，無法移除' });
+  }
+  const result = db.prepare('DELETE FROM trip_members WHERE id = ? AND trip_id = ?').run(req.params.mid, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  res.json({ deleted: true });
+});
+
+// Join trip by code
+app.post('/api/trips/join', (req, res) => {
+  const { join_code } = req.body;
+  if (!join_code) return res.status(400).json({ error: 'join_code is required' });
+  const member = db.prepare('SELECT * FROM trip_members WHERE join_code = ?').get(join_code.toUpperCase());
+  if (!member) return res.status(404).json({ error: '邀請碼無效' });
+  const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(member.trip_id);
+  res.json({ member, trip });
+});
+
+// Add expense to trip
+app.post('/api/trips/:id/expenses', (req, res) => {
+  const trip = db.prepare('SELECT id FROM trips WHERE id = ?').get(req.params.id);
+  if (!trip) return res.status(404).json({ error: 'Trip not found' });
+  const { paid_by, amount, currency, exchange_rate, category_id, description, date, split_type, splits } = req.body;
+  if (!paid_by || !amount || !date) {
+    return res.status(400).json({ error: 'paid_by, amount, date are required' });
+  }
+  const result = db.prepare(`
+    INSERT INTO trip_expenses (trip_id, paid_by, amount, currency, exchange_rate, category_id, description, date, split_type, splits)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(req.params.id, paid_by, amount, currency || 'TWD', exchange_rate || 1,
+    category_id || null, description || null, date, split_type || 'equal',
+    splits ? JSON.stringify(splits) : null);
+  const exp = db.prepare(`
+    SELECT te.*, tm.name as paid_by_name
+    FROM trip_expenses te LEFT JOIN trip_members tm ON te.paid_by = tm.id
+    WHERE te.id = ?
+  `).get(result.lastInsertRowid);
+  res.status(201).json(exp);
+});
+
+// Update trip expense
+app.put('/api/trips/:id/expenses/:eid', (req, res) => {
+  const old = db.prepare('SELECT * FROM trip_expenses WHERE id = ? AND trip_id = ?').get(req.params.eid, req.params.id);
+  if (!old) return res.status(404).json({ error: 'Not found' });
+  const { paid_by, amount, currency, exchange_rate, category_id, description, date, split_type, splits } = req.body;
+  db.prepare(`
+    UPDATE trip_expenses SET paid_by=?, amount=?, currency=?, exchange_rate=?, category_id=?,
+      description=?, date=?, split_type=?, splits=? WHERE id=?
+  `).run(
+    paid_by ?? old.paid_by, amount ?? old.amount, currency || old.currency,
+    exchange_rate ?? old.exchange_rate, category_id ?? old.category_id,
+    description ?? old.description, date || old.date, split_type || old.split_type,
+    splits !== undefined ? JSON.stringify(splits) : old.splits,
+    req.params.eid
+  );
+  const exp = db.prepare(`
+    SELECT te.*, tm.name as paid_by_name
+    FROM trip_expenses te LEFT JOIN trip_members tm ON te.paid_by = tm.id
+    WHERE te.id = ?
+  `).get(req.params.eid);
+  res.json(exp);
+});
+
+// Delete trip expense
+app.delete('/api/trips/:id/expenses/:eid', (req, res) => {
+  const result = db.prepare('DELETE FROM trip_expenses WHERE id = ? AND trip_id = ?').run(req.params.eid, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  res.json({ deleted: true });
+});
+
+// Trip settlement
+app.get('/api/trips/:id/settlement', (req, res) => {
+  const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(req.params.id);
+  if (!trip) return res.status(404).json({ error: 'Not found' });
+  const members = db.prepare('SELECT * FROM trip_members WHERE trip_id = ? ORDER BY id').all(req.params.id);
+  const expenses = db.prepare('SELECT * FROM trip_expenses WHERE trip_id = ?').all(req.params.id);
+  const { net, transfers } = computeSettlement(members, expenses);
+  const memberMap = {};
+  members.forEach(m => { memberMap[m.id] = m; });
+  res.json({
+    summary: members.map(m => ({
+      id: m.id, name: m.name,
+      total_paid: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + e.amount * (e.exchange_rate || 1), 0),
+      net_balance: Math.round((net[m.id] || 0) * 100) / 100,
+    })),
+    transfers: transfers.map(t => ({
+      from_id: t.from, from_name: memberMap[t.from]?.name || '?',
+      to_id: t.to, to_name: memberMap[t.to]?.name || '?',
+      amount: t.amount,
+    })),
+  });
 });
 
 // ── SPA fallback ─────────────────────────────────────────────────────────────

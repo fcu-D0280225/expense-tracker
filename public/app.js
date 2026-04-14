@@ -43,6 +43,7 @@ function initTabs() {
     if (hash === 'recurring') loadRecurringPage();
     if (hash === 'budgets') loadBudgetsPage();
     if (hash === 'reports') loadReportsPage();
+    if (hash === 'trips') loadTripsPage();
   };
   window.addEventListener('hashchange', navigate);
   navigate();
@@ -728,12 +729,346 @@ document.getElementById('budget-next').addEventListener('click', () => {
   renderBudgetStatus();
 });
 
+// ── Trips ────────────────────────────────────────────────────────────────────
+
+let currentTripId = null;
+let currentTripMembers = [];
+
+async function loadTripsPage() {
+  const trips = await api('GET', '/api/trips');
+  const container = document.getElementById('trips-list');
+  if (trips.length === 0) {
+    container.innerHTML = '<p class="empty">尚無旅遊專案</p>';
+    return;
+  }
+  container.innerHTML = trips.map(t => `
+    <div class="expense-item" data-id="${t.id}">
+      <div class="expense-icon">✈️</div>
+      <div class="expense-info">
+        <div class="expense-main">
+          <span class="expense-category">${escHtml(t.name)}${t.destination ? ' — ' + escHtml(t.destination) : ''}</span>
+          <span class="expense-amount">${t.budget > 0 ? fmtAmount(t.budget) + ' ' + escHtml(t.currency) : ''}</span>
+        </div>
+        <div class="expense-sub">
+          ${t.start_date || ''}${t.end_date ? ' ～ ' + t.end_date : ''}
+          ${t.created_by ? '　由 ' + escHtml(t.created_by) + ' 建立' : ''}
+        </div>
+      </div>
+      <div class="expense-actions">
+        <button class="secondary" onclick="openTrip(${t.id})">開啟</button>
+        <button class="danger" onclick="deleteTrip(${t.id})">刪除</button>
+      </div>
+    </div>`).join('');
+}
+
+async function openTrip(id) {
+  currentTripId = id;
+  document.getElementById('trips-list-view').style.display = 'none';
+  document.getElementById('trips-detail-view').style.display = '';
+  await refreshTripDetail();
+}
+
+async function refreshTripDetail() {
+  const trip = await api('GET', `/api/trips/${currentTripId}`);
+  currentTripMembers = trip.members;
+
+  document.getElementById('trip-detail-title').textContent = trip.name;
+  const meta = [
+    trip.destination, trip.start_date,
+    trip.end_date ? '～ ' + trip.end_date : null,
+    trip.budget > 0 ? '預算 ' + fmtAmount(trip.budget) + ' ' + trip.currency : null,
+  ].filter(Boolean).join('　');
+  document.getElementById('trip-detail-meta').textContent = meta;
+
+  // Members
+  const mList = document.getElementById('trip-members-list');
+  mList.innerHTML = trip.members.length === 0
+    ? '<p class="empty">尚無成員</p>'
+    : trip.members.map(m => `
+      <div class="expense-item">
+        <div class="expense-icon">👤</div>
+        <div class="expense-info">
+          <div class="expense-main">
+            <span class="expense-category">${escHtml(m.name)}</span>
+          </div>
+          <div class="expense-sub">邀請碼：<strong>${m.join_code}</strong>${m.email ? '　' + escHtml(m.email) : ''}</div>
+        </div>
+        <div class="expense-actions">
+          <button class="danger" onclick="deleteTripMember(${m.id})">移除</button>
+        </div>
+      </div>`).join('');
+
+  // Populate paid_by dropdown
+  const paidBySel = document.getElementById('texp-paid-by');
+  paidBySel.innerHTML = trip.members.length === 0
+    ? '<option value="">（先新增成員）</option>'
+    : trip.members.map(m => `<option value="${m.id}">${escHtml(m.name)}</option>`).join('');
+
+  // Expenses
+  renderTripExpenses(trip.expenses, trip.members);
+
+  // Settlement
+  await renderSettlement();
+}
+
+function renderTripExpenses(expenses, members) {
+  const container = document.getElementById('trip-expenses-list');
+  if (expenses.length === 0) {
+    container.innerHTML = '<p class="empty">尚無費用</p>';
+    return;
+  }
+  container.innerHTML = expenses.map(e => {
+    const rateNote = e.exchange_rate !== 1 ? ` (匯率 ${e.exchange_rate}, TWD ${fmtAmount(e.amount * e.exchange_rate)})` : '';
+    const splitLabel = { equal: '平均', paid_by_one: '自付', custom: '自訂' }[e.split_type] || e.split_type;
+    return `
+      <div class="expense-item" data-id="${e.id}">
+        <div class="expense-icon">💸</div>
+        <div class="expense-info">
+          <div class="expense-main">
+            <span class="expense-category">${escHtml(e.description || '費用')}</span>
+            <span class="expense-amount">${e.currency !== 'TWD' ? e.currency + ' ' : ''}${Number(e.amount).toLocaleString()}${rateNote}</span>
+          </div>
+          <div class="expense-sub">${e.date}　付：${escHtml(e.paid_by_name || '?')}　${splitLabel}</div>
+        </div>
+        <div class="expense-actions">
+          <button class="secondary" onclick="startEditTripExpense(${e.id})">編輯</button>
+          <button class="danger" onclick="deleteTripExpense(${e.id})">刪除</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function renderSettlement() {
+  const container = document.getElementById('trip-settlement');
+  try {
+    const data = await api('GET', `/api/trips/${currentTripId}/settlement`);
+    if (data.summary.length === 0) {
+      container.innerHTML = '<p class="empty">尚無成員或費用</p>';
+      return;
+    }
+    const summaryHtml = data.summary.map(s => {
+      const bal = s.net_balance;
+      const cls = bal > 0 ? 'income' : bal < 0 ? 'expense-amount' : '';
+      const sign = bal > 0 ? '+' : '';
+      return `<div class="expense-item">
+        <div class="expense-icon">👤</div>
+        <div class="expense-info">
+          <div class="expense-main">
+            <span class="expense-category">${escHtml(s.name)}</span>
+            <span class="${cls}">${sign}${Math.round(bal).toLocaleString()} TWD</span>
+          </div>
+          <div class="expense-sub">已付 ${fmtAmount(s.total_paid)}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const transferHtml = data.transfers.length === 0
+      ? '<p class="empty">無需轉帳 🎉</p>'
+      : '<h4>轉帳清單</h4>' + data.transfers.map(t =>
+          `<div class="settlement-row">
+            <span class="settlement-from">${escHtml(t.from_name)}</span>
+            <span class="settlement-arrow">→</span>
+            <span class="settlement-to">${escHtml(t.to_name)}</span>
+            <span class="settlement-amount">${fmtAmount(t.amount)}</span>
+          </div>`
+        ).join('');
+
+    container.innerHTML = summaryHtml + transferHtml;
+  } catch (e) {
+    container.innerHTML = '<p class="empty">計算失敗</p>';
+  }
+}
+
+document.getElementById('trip-back-btn').addEventListener('click', () => {
+  currentTripId = null;
+  document.getElementById('trips-list-view').style.display = '';
+  document.getElementById('trips-detail-view').style.display = 'none';
+  loadTripsPage();
+});
+
+document.getElementById('trip-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('trip-name').value.trim(),
+    destination: document.getElementById('trip-dest').value.trim() || null,
+    start_date: document.getElementById('trip-start').value || null,
+    end_date: document.getElementById('trip-end').value || null,
+    budget: parseFloat(document.getElementById('trip-budget').value) || 0,
+    currency: document.getElementById('trip-currency').value,
+    created_by: document.getElementById('trip-creator').value.trim() || null,
+  };
+  try {
+    await api('POST', '/api/trips', body);
+    document.getElementById('trip-form').reset();
+    await loadTripsPage();
+  } catch (err) {
+    alert('建立失敗：' + err.message);
+  }
+});
+
+async function deleteTrip(id) {
+  if (!confirm('確定刪除此旅遊專案及所有費用？')) return;
+  try {
+    await api('DELETE', `/api/trips/${id}`);
+    await loadTripsPage();
+  } catch (err) {
+    alert('刪除失敗：' + err.message);
+  }
+}
+
+document.getElementById('trip-member-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('member-name').value.trim(),
+    email: document.getElementById('member-email').value.trim() || null,
+  };
+  try {
+    await api('POST', `/api/trips/${currentTripId}/members`, body);
+    document.getElementById('trip-member-form').reset();
+    await refreshTripDetail();
+  } catch (err) {
+    alert('新增成員失敗：' + err.message);
+  }
+});
+
+async function deleteTripMember(mid) {
+  if (!confirm('確定移除此成員？')) return;
+  try {
+    await api('DELETE', `/api/trips/${currentTripId}/members/${mid}`);
+    await refreshTripDetail();
+  } catch (err) {
+    alert('移除失敗：' + err.message);
+  }
+}
+
+document.getElementById('texp-split-type').addEventListener('change', () => {
+  const type = document.getElementById('texp-split-type').value;
+  const customDiv = document.getElementById('texp-custom-splits');
+  if (type === 'custom') {
+    customDiv.style.display = '';
+    renderCustomSplitFields();
+  } else {
+    customDiv.style.display = 'none';
+  }
+});
+
+function renderCustomSplitFields() {
+  const div = document.getElementById('texp-custom-splits');
+  div.innerHTML = '<p style="font-size:0.85rem;color:#64748b;margin:4px 0">各人應分擔金額（TWD）：</p>' +
+    currentTripMembers.map(m => `
+      <label style="display:flex;gap:8px;align-items:center;margin:4px 0">
+        <span style="min-width:80px">${escHtml(m.name)}</span>
+        <input type="number" step="0.01" min="0" class="custom-split-input"
+          data-member-id="${m.id}" placeholder="0" style="flex:1">
+      </label>`).join('');
+}
+
+document.getElementById('texp-currency').addEventListener('change', () => {
+  const cur = document.getElementById('texp-currency').value;
+  const rateInput = document.getElementById('texp-rate');
+  if (cur === 'TWD') rateInput.value = '1';
+});
+
+document.getElementById('trip-expense-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const editId = document.getElementById('trip-expense-edit-id').value;
+  const splitType = document.getElementById('texp-split-type').value;
+  let splits = null;
+  if (splitType === 'custom') {
+    splits = {};
+    document.querySelectorAll('.custom-split-input').forEach(inp => {
+      const v = parseFloat(inp.value);
+      if (v > 0) splits[inp.dataset.memberId] = v;
+    });
+  }
+  const body = {
+    paid_by: parseInt(document.getElementById('texp-paid-by').value),
+    amount: parseFloat(document.getElementById('texp-amount').value),
+    currency: document.getElementById('texp-currency').value,
+    exchange_rate: parseFloat(document.getElementById('texp-rate').value) || 1,
+    description: document.getElementById('texp-desc').value.trim() || null,
+    date: document.getElementById('texp-date').value,
+    split_type: splitType,
+    splits: splits,
+  };
+  try {
+    if (editId) {
+      await api('PUT', `/api/trips/${currentTripId}/expenses/${editId}`, body);
+    } else {
+      await api('POST', `/api/trips/${currentTripId}/expenses`, body);
+    }
+    resetTripExpenseForm();
+    await refreshTripDetail();
+  } catch (err) {
+    alert('儲存失敗：' + err.message);
+  }
+});
+
+document.getElementById('texp-cancel-btn').addEventListener('click', resetTripExpenseForm);
+
+function resetTripExpenseForm() {
+  document.getElementById('trip-expense-form').reset();
+  document.getElementById('trip-expense-edit-id').value = '';
+  document.getElementById('texp-date').value = today();
+  document.getElementById('texp-rate').value = '1';
+  document.getElementById('texp-custom-splits').style.display = 'none';
+  document.getElementById('trip-expense-form-title').textContent = '新增費用';
+  document.getElementById('texp-submit-btn').textContent = '新增費用';
+  document.getElementById('texp-cancel-btn').style.display = 'none';
+}
+
+function startEditTripExpense(id) {
+  const container = document.getElementById('trip-expenses-list');
+  const item = container.querySelector(`[data-id="${id}"]`);
+  if (!item) return;
+  // Find expense data by re-fetching
+  api('GET', `/api/trips/${currentTripId}`).then(trip => {
+    const exp = trip.expenses.find(e => e.id === id);
+    if (!exp) return;
+    document.getElementById('trip-expense-edit-id').value = exp.id;
+    document.getElementById('texp-desc').value = exp.description || '';
+    document.getElementById('texp-amount').value = exp.amount;
+    document.getElementById('texp-currency').value = exp.currency || 'TWD';
+    document.getElementById('texp-rate').value = exp.exchange_rate || 1;
+    document.getElementById('texp-paid-by').value = exp.paid_by;
+    document.getElementById('texp-date').value = exp.date;
+    document.getElementById('texp-split-type').value = exp.split_type;
+    if (exp.split_type === 'custom') {
+      document.getElementById('texp-custom-splits').style.display = '';
+      renderCustomSplitFields();
+      if (exp.splits) {
+        const splits = JSON.parse(exp.splits);
+        document.querySelectorAll('.custom-split-input').forEach(inp => {
+          if (splits[inp.dataset.memberId]) inp.value = splits[inp.dataset.memberId];
+        });
+      }
+    }
+    document.getElementById('trip-expense-form-title').textContent = '編輯費用';
+    document.getElementById('texp-submit-btn').textContent = '儲存';
+    document.getElementById('texp-cancel-btn').style.display = '';
+    document.getElementById('trip-expense-form-card').scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
+async function deleteTripExpense(id) {
+  if (!confirm('確定刪除此費用？')) return;
+  try {
+    await api('DELETE', `/api/trips/${currentTripId}/expenses/${id}`);
+    await refreshTripDetail();
+  } catch (err) {
+    alert('刪除失敗：' + err.message);
+  }
+}
+
+document.getElementById('calc-settlement-btn').addEventListener('click', renderSettlement);
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 (async () => {
   await Promise.all([loadAccounts(), loadCategories()]);
   initTxType();
   populateAccountDropdowns();
+  document.getElementById('texp-date').value = today();
   initTabs();
   await loadTransactions();
 })();
