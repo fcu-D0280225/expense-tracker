@@ -63,7 +63,7 @@ async function loadCategories() {
   filterCatSel.innerHTML = '<option value="">全部</option>';
   categories.forEach(c => {
     filterCatSel.insertAdjacentHTML('beforeend',
-      `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
+      `<option value="${c.id}">${escHtml(c.icon || '')} ${escHtml(c.name)}</option>`);
   });
 }
 
@@ -91,26 +91,26 @@ function populateAccountDropdowns() {
   if (currentTxType === 'expense') {
     // Source: asset accounts; Dest: expense accounts
     accounts.filter(a => a.type === 'asset').forEach(a => {
-      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)}</option>`);
     });
     accounts.filter(a => a.type === 'expense').forEach(a => {
-      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)}</option>`);
     });
     catRow.style.display = '';
   } else if (currentTxType === 'income') {
     // Source: revenue accounts; Dest: asset accounts
     accounts.filter(a => a.type === 'revenue').forEach(a => {
-      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)}</option>`);
     });
     accounts.filter(a => a.type === 'asset').forEach(a => {
-      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)}</option>`);
     });
     catRow.style.display = 'none';
   } else {
     // Transfer: asset to asset
     accounts.filter(a => a.type === 'asset' || a.type === 'liabilities').forEach(a => {
-      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
-      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name}</option>`);
+      srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)}</option>`);
+      dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)}</option>`);
     });
     catRow.style.display = 'none';
   }
@@ -122,7 +122,7 @@ function populateCategoryDropdown() {
   const catSel = document.getElementById('category');
   catSel.innerHTML = '<option value="">（無）</option>';
   categories.forEach(c => {
-    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
+    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${escHtml(c.icon || '')} ${escHtml(c.name)}</option>`);
   });
   updateSubcategoryDropdown();
 }
@@ -134,7 +134,7 @@ function updateSubcategoryDropdown() {
   const cat = categories.find(c => c.id === catId);
   if (cat && cat.subcategories.length > 0) {
     cat.subcategories.forEach(s => {
-      subSel.insertAdjacentHTML('beforeend', `<option value="${s.id}">${s.name}</option>`);
+      subSel.insertAdjacentHTML('beforeend', `<option value="${s.id}">${escHtml(s.name)}</option>`);
     });
   }
 }
@@ -428,11 +428,11 @@ function populateRecurringDropdowns() {
   catSel.innerHTML = '<option value="">（無）</option>';
 
   accounts.forEach(a => {
-    srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name} (${ACCOUNT_TYPE_LABELS[a.type]})</option>`);
-    dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.icon} ${a.name} (${ACCOUNT_TYPE_LABELS[a.type]})</option>`);
+    srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)} (${ACCOUNT_TYPE_LABELS[a.type]})</option>`);
+    dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)} (${ACCOUNT_TYPE_LABELS[a.type]})</option>`);
   });
   categories.forEach(c => {
-    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
+    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${escHtml(c.icon || '')} ${escHtml(c.name)}</option>`);
   });
 
   // Default destination to first expense account (more useful for recurring expenses)
@@ -649,7 +649,7 @@ function populateBudgetDropdowns() {
   const catSel = document.getElementById('budget-category');
   catSel.innerHTML = '<option value="">整體預算</option>';
   categories.forEach(c => {
-    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
+    catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${escHtml(c.icon || '')} ${escHtml(c.name)}</option>`);
   });
   document.getElementById('budget-month').value = currentBudgetMonth;
 }
