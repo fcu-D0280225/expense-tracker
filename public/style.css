@@ -166,7 +166,7 @@ button.danger:hover { background: #dc2626; }
 
 .expense-info { flex: 1; min-width: 0; }
 .expense-main { display: flex; justify-content: space-between; align-items: baseline; }
-.expense-category { font-weight: 600; }
+.expense-category { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .expense-amount { font-size: 1.1rem; font-weight: 700; color: #4f46e5; white-space: nowrap; }
 .expense-amount.income { color: #16a34a; }
 .expense-amount.transfer { color: #0ea5e9; }
