@@ -435,6 +435,10 @@ function populateRecurringDropdowns() {
     catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`);
   });
 
+  // Default destination to first expense account (more useful for recurring expenses)
+  const firstExpense = accounts.find(a => a.type === 'expense');
+  if (firstExpense) dstSel.value = firstExpense.id;
+
   document.getElementById('rec-next').value = today();
 }
 
@@ -1073,4 +1077,13 @@ document.getElementById('calc-settlement-btn').addEventListener('click', renderS
   document.getElementById('texp-date').value = today();
   initTabs();
   await loadTransactions();
+
+  // Chinese validation messages for required number inputs
+  const MSG = { amount: '請填寫金額', 'rec-amount': '請填寫金額', 'budget-amount': '請填寫預算金額', 'texp-amount': '請填寫金額' };
+  Object.entries(MSG).forEach(([id, msg]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('invalid', () => el.setCustomValidity(msg));
+    el.addEventListener('input', () => el.setCustomValidity(''));
+  });
 })();
