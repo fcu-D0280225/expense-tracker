@@ -184,13 +184,14 @@ button.danger:hover { background: #dc2626; }
   margin-bottom: 1.25rem;
 }
 .account-group h3 {
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   color: #6b7280;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   margin-bottom: 0.5rem;
   padding-left: 0.25rem;
 }
+h3 { font-size: 0.95rem; }
 .account-card {
   background: white;
   border-radius: 10px;
