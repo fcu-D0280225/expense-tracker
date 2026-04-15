@@ -358,15 +358,17 @@ async function loadAccountsPage() {
   for (const type of order) {
     const accs = groups[type];
     if (!accs || accs.length === 0) continue;
-    const total = accs.reduce((s, a) => s + a.balance, 0);
+    const rawTotal = accs.reduce((s, a) => s + a.balance, 0);
+    const total = (type === 'revenue' || type === 'expense') ? Math.abs(rawTotal) : rawTotal;
     html += `<div class="account-group"><h3>${ACCOUNT_TYPE_LABELS[type]}</h3>`;
     for (const a of accs) {
-      const negClass = a.balance < 0 ? 'negative' : '';
+      const displayBalance = (type === 'revenue' || type === 'expense') ? Math.abs(a.balance) : a.balance;
+      const negClass = a.balance < 0 && type !== 'revenue' && type !== 'expense' ? 'negative' : '';
       html += `
         <div class="account-card">
           <div class="acc-icon">${a.icon}</div>
           <div class="acc-info"><div class="acc-name">${escHtml(a.name)}</div></div>
-          <div class="acc-balance ${negClass}">${fmtAmount(a.balance)}</div>
+          <div class="acc-balance ${negClass}">${fmtAmount(displayBalance)}</div>
           <div class="expense-actions">
             <button class="danger" onclick="deleteAccount(${a.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">刪除</button>
           </div>
@@ -527,8 +529,8 @@ async function loadMonthlyChart() {
       <div class="bar-row">
         <div class="bar-label">${d.month.slice(5)}</div>
         <div class="bar-group">
-          <div class="bar expense-bar" style="width:${ew}%">${fmtAmount(d.expense)}</div>
-          <div class="bar income-bar" style="width:${iw}%">${fmtAmount(d.income)}</div>
+          <div class="bar-item"><div class="bar expense-bar" style="width:${ew}%"></div><span class="bar-value">${fmtAmount(d.expense)}</span></div>
+          <div class="bar-item"><div class="bar income-bar" style="width:${iw}%"></div><span class="bar-value">${fmtAmount(d.income)}</span></div>
         </div>
       </div>`;
   }).join('') + '</div>';
