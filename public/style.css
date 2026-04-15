@@ -24,7 +24,10 @@ header h1 { font-size: 1.4rem; margin-bottom: 0.75rem; }
 .tab-nav::-webkit-scrollbar { display: none; }
 
 .tab {
-  padding: 0.6rem 1.2rem;
+  padding: 0.75rem 1.2rem;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
   color: rgba(255,255,255,0.7);
   text-decoration: none;
   font-size: 0.9rem;
@@ -64,7 +67,8 @@ label {
 }
 
 input, select {
-  padding: 0.5rem 0.65rem;
+  padding: 0.6rem 0.65rem;
+  min-height: 44px;
   border: 1px solid #d1d5db;
   border-radius: 7px;
   font-size: 0.95rem;
@@ -80,7 +84,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid #4f46e5; outline-offs
 .form-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
 
 button {
-  padding: 0.55rem 1.2rem;
+  padding: 0.65rem 1.2rem;
+  min-height: 44px;
   border: none;
   border-radius: 7px;
   cursor: pointer;
