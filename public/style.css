@@ -170,7 +170,7 @@ button.danger:hover { background: #dc2626; }
 .expense-amount { font-size: 1.1rem; font-weight: 700; color: #4f46e5; white-space: nowrap; }
 .expense-amount.income { color: #16a34a; }
 .expense-amount.transfer { color: #0ea5e9; }
-.expense-sub { font-size: 0.8rem; color: #888; margin-top: 0.2rem; }
+.expense-sub { font-size: 0.8rem; color: #888; margin-top: 0.2rem; word-break: keep-all; }
 .expense-tags { color: #6d28d9; font-size: 0.78rem; }
 .expense-flow { font-size: 0.78rem; color: #6b7280; }
 

@@ -427,9 +427,23 @@ function populateRecurringDropdowns() {
   dstSel.innerHTML = '';
   catSel.innerHTML = '<option value="">（無）</option>';
 
-  accounts.forEach(a => {
-    srcSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)} (${ACCOUNT_TYPE_LABELS[a.type]})</option>`);
-    dstSel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)} (${ACCOUNT_TYPE_LABELS[a.type]})</option>`);
+  // Group accounts by type for clarity
+  const typeOrder = ['asset', 'liabilities', 'revenue', 'expense'];
+  typeOrder.forEach(type => {
+    const group = accounts.filter(a => a.type === type);
+    if (!group.length) return;
+    const label = ACCOUNT_TYPE_LABELS[type];
+    const srcGrp = document.createElement('optgroup');
+    srcGrp.label = label;
+    const dstGrp = document.createElement('optgroup');
+    dstGrp.label = label;
+    group.forEach(a => {
+      const html = `<option value="${a.id}">${escHtml(a.icon)} ${escHtml(a.name)}</option>`;
+      srcGrp.insertAdjacentHTML('beforeend', html);
+      dstGrp.insertAdjacentHTML('beforeend', html);
+    });
+    srcSel.appendChild(srcGrp);
+    dstSel.appendChild(dstGrp);
   });
   categories.forEach(c => {
     catSel.insertAdjacentHTML('beforeend', `<option value="${c.id}">${escHtml(c.icon || '')} ${escHtml(c.name)}</option>`);

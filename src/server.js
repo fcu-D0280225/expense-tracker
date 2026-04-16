@@ -628,8 +628,13 @@ app.get('/api/reports/monthly', (req, res) => {
 // Category breakdown for a period
 app.get('/api/reports/category', (req, res) => {
   const { from, to } = req.query;
+  // When category_id is null, fall back to dest account name as the label
   let query = `
-    SELECT c.name, c.icon, SUM(t.amount) as total, COUNT(*) as count
+    SELECT
+      COALESCE(c.name, da.name) AS name,
+      COALESCE(c.icon, da.icon) AS icon,
+      SUM(t.amount) AS total,
+      COUNT(*) AS count
     FROM transactions t
     JOIN accounts sa ON t.source_account_id = sa.id
     JOIN accounts da ON t.dest_account_id = da.id
@@ -639,7 +644,7 @@ app.get('/api/reports/category', (req, res) => {
   const params = [];
   if (from) { query += ' AND t.date >= ?'; params.push(from); }
   if (to)   { query += ' AND t.date <= ?'; params.push(to); }
-  query += ' GROUP BY t.category_id ORDER BY total DESC';
+  query += ' GROUP BY COALESCE(c.name, da.name) ORDER BY total DESC';
   res.json(db.prepare(query).all(...params));
 });
 
