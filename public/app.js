@@ -240,9 +240,61 @@ function renderTransactions(txs) {
   }).join('');
 }
 
+// ── Inline Calendar Picker ───────────────────────────────────────────────────
+
+(function () {
+  const calEl = document.getElementById('cal-picker');
+  const calInput = document.getElementById('date');
+  const DOW = ['日','一','二','三','四','五','六'];
+  const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  let _year, _month;
+
+  function _render() {
+    const sel = calInput.value;
+    const tod = today();
+    const first = new Date(_year, _month, 1);
+    const last  = new Date(_year, _month + 1, 0);
+    const startDow = first.getDay();
+
+    let html = `<div class="cal-header">
+      <button type="button" class="cal-nav" id="cal-prev">‹</button>
+      <span class="cal-title">${_year} 年 ${MONTHS[_month]}</span>
+      <button type="button" class="cal-nav" id="cal-next">›</button>
+    </div><div class="cal-grid">`;
+
+    DOW.forEach(d => { html += `<div class="cal-dow">${d}</div>`; });
+    for (let i = 0; i < startDow; i++) html += '<div class="cal-day cal-empty"></div>';
+    for (let d = 1; d <= last.getDate(); d++) {
+      const ds = `${_year}-${String(_month + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const cls = ['cal-day', ds === sel ? 'selected' : '', ds === tod && ds !== sel ? 'is-today' : ''].filter(Boolean).join(' ');
+      html += `<div class="${cls}" data-date="${ds}">${d}</div>`;
+    }
+    html += '</div>';
+    calEl.innerHTML = html;
+
+    calEl.querySelector('#cal-prev').addEventListener('click', () => {
+      _month--; if (_month < 0) { _month = 11; _year--; } _render();
+    });
+    calEl.querySelector('#cal-next').addEventListener('click', () => {
+      _month++; if (_month > 11) { _month = 0; _year++; } _render();
+    });
+    calEl.querySelectorAll('.cal-day[data-date]').forEach(el => {
+      el.addEventListener('click', () => { calInput.value = el.dataset.date; _render(); });
+    });
+  }
+
+  window.calInit = function (dateStr) {
+    const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+    _year  = d.getFullYear();
+    _month = d.getMonth();
+    calInput.value = dateStr || today();
+    _render();
+  };
+})();
+
 // ── Transaction Form ─────────────────────────────────────────────────────────
 
-document.getElementById('date').value = today();
+calInit(today());
 
 document.getElementById('tx-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -278,7 +330,7 @@ document.getElementById('cancel-btn').addEventListener('click', resetTxForm);
 function resetTxForm() {
   document.getElementById('tx-form').reset();
   document.getElementById('edit-id').value = '';
-  document.getElementById('date').value = today();
+  calInit(today());
   document.getElementById('form-title').textContent = '新增交易';
   document.getElementById('submit-btn').textContent = '新增';
   document.getElementById('cancel-btn').style.display = 'none';
@@ -303,7 +355,7 @@ async function startEditTx(id) {
 
   document.getElementById('edit-id').value = tx.id;
   document.getElementById('amount').value = tx.amount;
-  document.getElementById('date').value = tx.date;
+  calInit(tx.date);
   document.getElementById('source-account').value = tx.source_account_id;
   document.getElementById('dest-account').value = tx.dest_account_id;
   document.getElementById('category').value = tx.category_id || '';

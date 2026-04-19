@@ -35,10 +35,10 @@
             <button type="button" class="tx-type" data-type="income">收入</button>
             <button type="button" class="tx-type" data-type="transfer">轉帳</button>
           </div>
-          <div class="row">
-            <label>金額<input type="number" id="amount" step="0.01" min="0.01" required placeholder="0"></label>
-            <label>日期<input type="date" id="date" required></label>
-          </div>
+          <!-- Inline calendar date picker -->
+          <div id="cal-picker" class="cal-picker"></div>
+          <input type="hidden" id="date">
+          <label>金額<input type="number" id="amount" step="0.01" min="0.01" required placeholder="0"></label>
           <div class="row">
             <label>來源帳戶
               <select id="source-account" required></select>
