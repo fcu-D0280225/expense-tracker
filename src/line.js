@@ -1,9 +1,10 @@
 'use strict';
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const { messagingApi, validateSignature } = require('@line/bot-sdk');
-const Anthropic = require('@anthropic-ai/sdk');
 const db = require('./db');
 
-const anthropic = new Anthropic();
+const execFileAsync = promisify(execFile);
 
 function getLineClient() {
   return new messagingApi.MessagingApiClient({
@@ -24,7 +25,7 @@ async function parseWithClaude(text, categories, accounts) {
   const assetAccounts = accounts.filter(a => a.type === 'asset').map(a => a.name).join('、');
   const expenseAccounts = accounts.filter(a => a.type === 'expense').map(a => a.name).join('、');
 
-  const systemPrompt = `你是記帳助手，解析使用者的自然語言訊息成結構化 JSON。
+  const prompt = `你是記帳助手，解析使用者的自然語言訊息成結構化 JSON。你的回覆必須只包含 JSON，不可有任何說明文字或 markdown。
 
 今天：${today}
 可用分類：${categoryList}
@@ -41,16 +42,21 @@ async function parseWithClaude(text, categories, accounts) {
 - type 固定為 "expense"
 
 回傳嚴格 JSON（不要有其他文字）：
-{"amount":數字,"description":"說明文字","category":"大分類名稱","subcategory":"小分類名稱或null","source_account":"來源帳戶名稱","dest_account":"目的帳戶名稱","date":"YYYY-MM-DD","type":"expense"}`;
+{"amount":數字,"description":"說明文字","category":"大分類名稱","subcategory":"小分類名稱或null","source_account":"來源帳戶名稱","dest_account":"目的帳戶名稱","date":"YYYY-MM-DD","type":"expense"}
 
-  const msg = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 300,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: text }],
-  });
+使用者訊息：${text}`;
 
-  return JSON.parse(msg.content[0].text.trim());
+  const { stdout } = await execFileAsync('claude', [
+    '--print', prompt,
+    '--output-format', 'json',
+    '--disallowed-tools', 'Bash,Edit,Write,Read,Glob,Grep,Agent',
+  ], { timeout: 60_000 });
+
+  const envelope = JSON.parse(stdout);
+  if (envelope.type !== 'result' || envelope.subtype !== 'success') {
+    throw new Error(`Claude CLI: ${envelope.subtype}`);
+  }
+  return JSON.parse(envelope.result.trim());
 }
 
 async function handleLineWebhook(req, res) {
