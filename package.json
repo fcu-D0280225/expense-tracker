@@ -1,7 +1,7 @@
 {
   "name": "expense-tracker",
   "version": "1.0.0",
-  "description": "Lightweight expense tracker with SQLite backend",
+  "description": "Lightweight expense tracker with MySQL backend",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js"

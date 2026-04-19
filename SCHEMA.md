@@ -24,6 +24,7 @@
 | 7 | `trips` | 旅遊專案 |
 | 8 | `trip_members` | 旅遊同行成員 |
 | 9 | `trip_expenses` | 旅遊費用（支援分帳） |
+| 10 | `trip_member_claims` | 裝置身份認領（device_token ↔ member）|
 
 ### 1. categories
 | 欄位 | 型別 |
@@ -102,6 +103,18 @@ UNIQUE `(category_id, month)`，`category_id = NULL` 表示全局預算
 | splits | TEXT（JSON，自訂分帳明細） |
 | created_at | DATETIME |
 
+### 10. trip_member_claims
+裝置身份認領表 — 分享旅遊連結時，各裝置可認領自己是哪位成員，跨裝置持久化。
+| 欄位 | 型別 |
+|------|------|
+| id | INT PK |
+| member_id | INT FK → trip_members CASCADE |
+| trip_id | INT FK → trips CASCADE |
+| device_token | VARCHAR(64) NOT NULL |
+| claimed_at | DATETIME |
+
+UNIQUE `(device_token, trip_id)` — 一個裝置在同一 trip 只能認領一位成員。
+
 ---
 
 ## 二、建置與啟動
@@ -141,18 +154,6 @@ npm start
 # → 首次啟動自動建立 schema + seed
 # → 輸出：Expense Tracker running at http://localhost:3000 (MySQL)
 ```
-
-### 從舊 SQLite 遷移（選用）
-
-```bash
-# 臨時裝 better-sqlite3（不存到 package.json）
-npm install better-sqlite3 --no-save
-
-# 執行遷移（source: data/expenses.db）
-npm run migrate
-```
-
-遷移完成後會自動比對行數（`scripts/migrate-sqlite-to-mysql.js`）。
 
 ### 正式部署建議
 

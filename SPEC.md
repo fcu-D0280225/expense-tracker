@@ -1,7 +1,7 @@
 # Expense Tracker — 專案規格
 
 ## 目標
-輕量記帳 Web App，採用雙式記帳架構，資料存 SQLite，方便 AI 定期分析消費習慣。
+輕量記帳 Web App，採用雙式記帳架構，資料存 MySQL，方便 AI 定期分析消費習慣。
 
 ## 架構概念（參考 Firefly III）
 - **雙式記帳（Double-entry bookkeeping）**：每筆交易有「來源帳戶」→「目的帳戶」
@@ -40,14 +40,14 @@
 - 淨資產走勢折線圖（近 12 個月）
 
 ### AI 分析友善設計
-- SQLite 資料庫，schema 簡單易讀
+- MySQL 資料庫，schema 簡單易讀
 - 提供 `/api/export` 輸出近 N 天的交易 CSV（供 AI 讀取）
 - 每筆交易附 `tags` 欄位（自由標籤，AI 可用來分群）
 
 ## 技術棧
-- Backend：Node.js + Express + better-sqlite3
+- Backend：Node.js + Express + mysql2
 - Frontend：原生 HTML/CSS/JS（PWA，可加入主畫面）
-- DB：SQLite（`data/expenses.db`）
+- DB：MySQL 8（database `expense_tracker`，schema 詳見 `SCHEMA.md`）
 
 ## Schema
 
