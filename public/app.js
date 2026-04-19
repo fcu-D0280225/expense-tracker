@@ -933,25 +933,54 @@ document.getElementById('budget-next').addEventListener('click', () => {
 let currentTripId = null;
 let currentTripMembers = [];
 
-// ── Trip Identity (localStorage per trip) ────────────────────────────────────
+// ── Trip Identity (device token → MySQL) ─────────────────────────────────────
 
-function getTripIdentity() {
-  try { return JSON.parse(localStorage.getItem(`trip_identity_${currentTripId}`)); } catch { return null; }
+function getDeviceToken() {
+  let token = localStorage.getItem('trip_device_token');
+  if (!token) {
+    token = crypto.randomUUID();
+    localStorage.setItem('trip_device_token', token);
+  }
+  return token;
 }
-function setTripIdentity(member) {
-  localStorage.setItem(`trip_identity_${currentTripId}`, JSON.stringify({ id: member.id, name: member.name }));
+
+let _currentIdentity = null; // { id, name } or null
+
+function getTripIdentity() { return _currentIdentity; }
+
+async function loadTripIdentityFromServer() {
+  try {
+    const data = await api('GET', `/api/trips/identity?trip_id=${currentTripId}&device_token=${getDeviceToken()}`);
+    _currentIdentity = data;
+  } catch {
+    _currentIdentity = null;
+  }
 }
-function clearTripIdentity() {
-  localStorage.removeItem(`trip_identity_${currentTripId}`);
-  renderIdentityBar(currentTripMembers);
-}
-function claimTripIdentity(id) {
+
+async function claimTripIdentity(id) {
   const m = currentTripMembers.find(m => m.id === id);
   if (!m) return;
-  setTripIdentity(m);
+  try {
+    await api('POST', '/api/trips/identity', {
+      trip_id: currentTripId,
+      member_id: id,
+      device_token: getDeviceToken(),
+    });
+    _currentIdentity = { id: m.id, name: m.name };
+    renderIdentityBar(currentTripMembers);
+    const sel = document.getElementById('texp-paid-by');
+    if (sel) sel.value = id;
+  } catch (err) {
+    alert('身份認領失敗：' + err.message);
+  }
+}
+
+async function clearTripIdentity() {
+  try {
+    await api('DELETE', '/api/trips/identity', { trip_id: currentTripId, device_token: getDeviceToken() });
+  } catch { /* best effort */ }
+  _currentIdentity = null;
   renderIdentityBar(currentTripMembers);
-  const sel = document.getElementById('texp-paid-by');
-  if (sel) sel.value = id;
 }
 
 function renderIdentityBar(members) {
@@ -1018,7 +1047,8 @@ async function refreshTripDetail() {
   ].filter(Boolean).join('　');
   document.getElementById('trip-detail-meta').textContent = meta;
 
-  // Identity bar
+  // Identity bar — load from server first
+  await loadTripIdentityFromServer();
   renderIdentityBar(trip.members);
 
   // Members

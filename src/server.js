@@ -93,6 +93,16 @@ async function initSchema() {
       FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
       FOREIGN KEY (paid_by) REFERENCES trip_members(id)
     )`,
+    `CREATE TABLE IF NOT EXISTS trip_member_claims (
+      id           INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      member_id    INT NOT NULL,
+      trip_id      INT NOT NULL,
+      device_token VARCHAR(64) NOT NULL,
+      claimed_at   DATETIME DEFAULT NOW(),
+      UNIQUE KEY uq_device_trip (device_token, trip_id),
+      FOREIGN KEY (member_id) REFERENCES trip_members(id) ON DELETE CASCADE,
+      FOREIGN KEY (trip_id)   REFERENCES trips(id) ON DELETE CASCADE
+    )`,
     `CREATE TABLE IF NOT EXISTS recurring (
       id                INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
       title             VARCHAR(255) NOT NULL,
@@ -876,6 +886,53 @@ app.get('/api/trips/:id/settlement', async (req, res) => {
       amount: t.amount,
     })),
   });
+});
+
+// ── Trip Identity API ─────────────────────────────────────────────────────────
+
+// POST /api/trips/identity  { trip_id, member_id, device_token }
+app.post('/api/trips/identity', async (req, res) => {
+  const { trip_id, member_id, device_token } = req.body;
+  if (!trip_id || !member_id || !device_token) {
+    return res.status(400).json({ error: 'trip_id, member_id, device_token are required' });
+  }
+  const member = await db.get(
+    'SELECT id, name FROM trip_members WHERE id = ? AND trip_id = ?', [member_id, trip_id]
+  );
+  if (!member) return res.status(404).json({ error: 'Member not found in this trip' });
+
+  await db.run(`
+    INSERT INTO trip_member_claims (member_id, trip_id, device_token)
+    VALUES (?, ?, ?)
+    ON DUPLICATE KEY UPDATE member_id = VALUES(member_id), claimed_at = NOW()
+  `, [member_id, trip_id, device_token]);
+
+  res.json({ id: member.id, name: member.name });
+});
+
+// DELETE /api/trips/identity  { trip_id, device_token }
+app.delete('/api/trips/identity', async (req, res) => {
+  const { trip_id, device_token } = req.body;
+  if (!trip_id || !device_token) return res.status(400).json({ error: 'trip_id and device_token are required' });
+  await db.run('DELETE FROM trip_member_claims WHERE trip_id = ? AND device_token = ?', [trip_id, device_token]);
+  res.json({ cleared: true });
+});
+
+// GET /api/trips/identity?trip_id=xxx&device_token=xxx
+app.get('/api/trips/identity', async (req, res) => {
+  const { trip_id, device_token } = req.query;
+  if (!trip_id || !device_token) {
+    return res.status(400).json({ error: 'trip_id and device_token are required' });
+  }
+  const row = await db.get(`
+    SELECT tm.id, tm.name
+    FROM trip_member_claims c
+    JOIN trip_members tm ON c.member_id = tm.id
+    WHERE c.trip_id = ? AND c.device_token = ?
+  `, [trip_id, device_token]);
+
+  if (!row) return res.status(404).json({ error: 'No identity for this device' });
+  res.json(row);
 });
 
 // ── SPA fallback ─────────────────────────────────────────────────────────────
