@@ -244,9 +244,9 @@ function renderTransactions(txs) {
 
 // ── Inline Calendar Picker ───────────────────────────────────────────────────
 
-(function () {
-  const calEl = document.getElementById('cal-picker');
-  const calInput = document.getElementById('date');
+function makeCal(pickerId, inputId) {
+  const calEl = document.getElementById(pickerId);
+  const calInput = document.getElementById(inputId);
   const DOW = ['日','一','二','三','四','五','六'];
   const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
   let _year, _month;
@@ -259,9 +259,9 @@ function renderTransactions(txs) {
     const startDow = first.getDay();
 
     let html = `<div class="cal-header">
-      <button type="button" class="cal-nav" id="cal-prev">‹</button>
+      <button type="button" class="cal-nav" data-dir="prev">‹</button>
       <span class="cal-title">${_year} 年 ${MONTHS[_month]}</span>
-      <button type="button" class="cal-nav" id="cal-next">›</button>
+      <button type="button" class="cal-nav" data-dir="next">›</button>
     </div><div class="cal-grid">`;
 
     DOW.forEach(d => { html += `<div class="cal-dow">${d}</div>`; });
@@ -274,10 +274,10 @@ function renderTransactions(txs) {
     html += '</div>';
     calEl.innerHTML = html;
 
-    calEl.querySelector('#cal-prev').addEventListener('click', () => {
+    calEl.querySelector('[data-dir="prev"]').addEventListener('click', () => {
       _month--; if (_month < 0) { _month = 11; _year--; } _render();
     });
-    calEl.querySelector('#cal-next').addEventListener('click', () => {
+    calEl.querySelector('[data-dir="next"]').addEventListener('click', () => {
       _month++; if (_month > 11) { _month = 0; _year++; } _render();
     });
     calEl.querySelectorAll('.cal-day[data-date]').forEach(el => {
@@ -285,14 +285,17 @@ function renderTransactions(txs) {
     });
   }
 
-  window.calInit = function (dateStr) {
+  return function init(dateStr) {
     const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
     _year  = d.getFullYear();
     _month = d.getMonth();
     calInput.value = dateStr || today();
     _render();
   };
-})();
+}
+
+window.calInit = makeCal('cal-picker', 'date');
+window.texpCalInit = makeCal('texp-cal-picker', 'texp-date');
 
 // ── Transaction Form ─────────────────────────────────────────────────────────
 
@@ -1205,7 +1208,7 @@ document.getElementById('texp-cancel-btn').addEventListener('click', resetTripEx
 function resetTripExpenseForm() {
   document.getElementById('trip-expense-form').reset();
   document.getElementById('trip-expense-edit-id').value = '';
-  document.getElementById('texp-date').value = today();
+  texpCalInit(today());
   document.getElementById('texp-rate').value = '1';
   document.getElementById('texp-custom-splits').style.display = 'none';
   document.getElementById('trip-expense-form-title').textContent = '新增費用';
@@ -1227,7 +1230,7 @@ function startEditTripExpense(id) {
     document.getElementById('texp-currency').value = exp.currency || 'TWD';
     document.getElementById('texp-rate').value = exp.exchange_rate || 1;
     document.getElementById('texp-paid-by').value = exp.paid_by;
-    document.getElementById('texp-date').value = exp.date;
+    texpCalInit(exp.date);
     document.getElementById('texp-split-type').value = exp.split_type;
     if (exp.split_type === 'custom') {
       document.getElementById('texp-custom-splits').style.display = '';
@@ -1264,7 +1267,7 @@ document.getElementById('calc-settlement-btn').addEventListener('click', renderS
   await Promise.all([loadAccounts(), loadCategories()]);
   initTxType();
   populateAccountDropdowns();
-  document.getElementById('texp-date').value = today();
+  texpCalInit(today());
   initTabs();
   await loadTransactions();
 
