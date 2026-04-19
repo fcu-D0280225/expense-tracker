@@ -421,6 +421,22 @@ h3 { font-size: 0.95rem; }
 .trip-detail-header { margin-bottom: 1rem; }
 .trip-meta { color: var(--text-sub); font-size: 0.9rem; margin: 4px 0 0; }
 
+.identity-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-top: 10px;
+  font-size: 0.9rem;
+}
+.identity-banner.identity-set { border-color: var(--accent); }
+.identity-label { color: var(--text-sub); margin-right: 4px; }
+button.sm { padding: 4px 10px; font-size: 0.8rem; }
+
 .settlement-row {
   display: flex;
   align-items: center;

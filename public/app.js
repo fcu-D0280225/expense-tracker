@@ -933,6 +933,45 @@ document.getElementById('budget-next').addEventListener('click', () => {
 let currentTripId = null;
 let currentTripMembers = [];
 
+// ── Trip Identity (localStorage per trip) ────────────────────────────────────
+
+function getTripIdentity() {
+  try { return JSON.parse(localStorage.getItem(`trip_identity_${currentTripId}`)); } catch { return null; }
+}
+function setTripIdentity(member) {
+  localStorage.setItem(`trip_identity_${currentTripId}`, JSON.stringify({ id: member.id, name: member.name }));
+}
+function clearTripIdentity() {
+  localStorage.removeItem(`trip_identity_${currentTripId}`);
+  renderIdentityBar(currentTripMembers);
+}
+function claimTripIdentity(id) {
+  const m = currentTripMembers.find(m => m.id === id);
+  if (!m) return;
+  setTripIdentity(m);
+  renderIdentityBar(currentTripMembers);
+  const sel = document.getElementById('texp-paid-by');
+  if (sel) sel.value = id;
+}
+
+function renderIdentityBar(members) {
+  const bar = document.getElementById('trip-identity-bar');
+  const identity = getTripIdentity();
+  if (identity) {
+    bar.innerHTML = `<div class="identity-banner identity-set">
+      <span>你是 👤 <strong>${escHtml(identity.name)}</strong></span>
+      <button class="secondary sm" onclick="clearTripIdentity()">更換身份</button>
+    </div>`;
+  } else if (members.length === 0) {
+    bar.innerHTML = '';
+  } else {
+    bar.innerHTML = `<div class="identity-banner">
+      <span class="identity-label">你是哪位成員？</span>
+      ${members.map(m => `<button class="secondary sm" onclick="claimTripIdentity(${m.id})">${escHtml(m.name)}</button>`).join('')}
+    </div>`;
+  }
+}
+
 async function loadTripsPage() {
   const trips = await api('GET', '/api/trips');
   const container = document.getElementById('trips-list');
@@ -979,6 +1018,9 @@ async function refreshTripDetail() {
   ].filter(Boolean).join('　');
   document.getElementById('trip-detail-meta').textContent = meta;
 
+  // Identity bar
+  renderIdentityBar(trip.members);
+
   // Members
   const mList = document.getElementById('trip-members-list');
   mList.innerHTML = trip.members.length === 0
@@ -993,15 +1035,20 @@ async function refreshTripDetail() {
           <div class="expense-sub">邀請碼：<strong>${m.join_code}</strong>${m.email ? '　' + escHtml(m.email) : ''}</div>
         </div>
         <div class="expense-actions">
+          <button class="secondary sm" onclick="copyJoinCode('${m.join_code}', this)" title="複製邀請碼">複製碼</button>
           <button class="danger" onclick="deleteTripMember(${m.id})">移除</button>
         </div>
       </div>`).join('');
 
-  // Populate paid_by dropdown
+  // Populate paid_by dropdown, pre-select identity if set
   const paidBySel = document.getElementById('texp-paid-by');
+  const identity = getTripIdentity();
   paidBySel.innerHTML = trip.members.length === 0
     ? '<option value="">（先新增成員）</option>'
     : trip.members.map(m => `<option value="${m.id}">${escHtml(m.name)}</option>`).join('');
+  if (identity && paidBySel.querySelector(`option[value="${identity.id}"]`)) {
+    paidBySel.value = identity.id;
+  }
 
   // Expenses
   renderTripExpenses(trip.expenses, trip.members);
@@ -1214,6 +1261,11 @@ function resetTripExpenseForm() {
   document.getElementById('trip-expense-form-title').textContent = '新增費用';
   document.getElementById('texp-submit-btn').textContent = '新增費用';
   document.getElementById('texp-cancel-btn').style.display = 'none';
+  const identity = getTripIdentity();
+  const sel = document.getElementById('texp-paid-by');
+  if (identity && sel && sel.querySelector(`option[value="${identity.id}"]`)) {
+    sel.value = identity.id;
+  }
 }
 
 function startEditTripExpense(id) {
@@ -1246,6 +1298,14 @@ function startEditTripExpense(id) {
     document.getElementById('texp-submit-btn').textContent = '儲存';
     document.getElementById('texp-cancel-btn').style.display = '';
     document.getElementById('trip-expense-form-card').scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
+function copyJoinCode(code, btn) {
+  navigator.clipboard.writeText(code).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '已複製！';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
   });
 }
 
