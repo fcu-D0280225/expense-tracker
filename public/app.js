@@ -38,6 +38,16 @@ function initTabs() {
   const tabs = document.querySelectorAll('.tab');
   const navigate = () => {
     const hash = location.hash.slice(1) || 'transactions';
+
+    // Share-link route: #trip/:share_token
+    const shareMatch = hash.match(/^trip\/([a-zA-Z0-9]+)$/);
+    if (shareMatch) {
+      tabs.forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      loadTripSharePage(shareMatch[1]);
+      return;
+    }
+
     tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === hash));
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + hash));
 
@@ -932,6 +942,100 @@ document.getElementById('budget-next').addEventListener('click', () => {
 
 let currentTripId = null;
 let currentTripMembers = [];
+let currentShareToken = null; // set when visitor arrived via share link
+
+// ── Share / Join page ────────────────────────────────────────────────────────
+
+async function loadTripSharePage(token) {
+  currentShareToken = token;
+  let trip;
+  try {
+    trip = await api('GET', `/api/trips/by-share/${encodeURIComponent(token)}`);
+  } catch (e) {
+    document.body.innerHTML = `<main><div class="form-card"><h2>分享連結無效</h2><p>${escHtml(e.message || '')}</p></div></main>`;
+    return;
+  }
+  currentTripId = trip.id;
+
+  // Already a member via Google session?
+  if (trip.current_member) {
+    _currentIdentity = { id: trip.current_member.id, name: trip.current_member.name };
+    await showTripDetailFromShare();
+    return;
+  }
+  // Already claimed via device_token?
+  try {
+    const ident = await api('GET',
+      `/api/trips/identity?trip_id=${trip.id}&device_token=${getDeviceToken()}`);
+    if (ident && ident.id) {
+      _currentIdentity = { id: ident.id, name: ident.name };
+      await showTripDetailFromShare();
+      return;
+    }
+  } catch { /* not yet claimed */ }
+
+  // Show join page
+  document.getElementById('page-trip-share').classList.add('active');
+  document.getElementById('share-trip-name').textContent = `🧳 ${trip.name || ''}`;
+  const meta = [
+    trip.destination, trip.start_date,
+    trip.end_date ? '～ ' + trip.end_date : null,
+  ].filter(Boolean).join('　');
+  document.getElementById('share-trip-meta').textContent = meta;
+
+  document.getElementById('share-google-btn').onclick = () => {
+    location.href = `/auth/google?share_token=${encodeURIComponent(token)}`;
+  };
+  document.getElementById('share-name-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const nameInput = document.getElementById('share-name-input');
+    const name = nameInput.value.trim();
+    if (!name) return;
+    try {
+      const { member } = await api('POST', `/api/trips/by-share/${encodeURIComponent(token)}/join`, {
+        name,
+        device_token: getDeviceToken(),
+      });
+      _currentIdentity = { id: member.id, name: member.name };
+      await showTripDetailFromShare();
+    } catch (err) {
+      alert('加入失敗：' + err.message);
+    }
+  };
+}
+
+function renderShareLink(shareToken) {
+  const box = document.getElementById('trip-share-link');
+  if (!box) return;
+  if (!shareToken) { box.innerHTML = ''; return; }
+  const url = `${location.origin}/#trip/${shareToken}`;
+  box.innerHTML = `
+    <div class="share-link-row">
+      <span class="share-label">🔗 分享連結：</span>
+      <input type="text" class="share-url" readonly value="${url}">
+      <button class="secondary sm" type="button" onclick="copyShareLink(this, '${url}')">複製</button>
+    </div>`;
+}
+
+window.copyShareLink = async function (btn, url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    const orig = btn.textContent;
+    btn.textContent = '已複製 ✓';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  } catch {
+    alert('複製失敗，請手動選取連結');
+  }
+};
+
+async function showTripDetailFromShare() {
+  // Switch to trips tab detail view, no list
+  document.getElementById('page-trip-share').classList.remove('active');
+  document.getElementById('page-trips').classList.add('active');
+  document.getElementById('trips-list-view').style.display = 'none';
+  document.getElementById('trips-detail-view').style.display = '';
+  await refreshTripDetail();
+}
 
 // ── Trip Identity (device token → MySQL) ─────────────────────────────────────
 
@@ -1046,6 +1150,9 @@ async function refreshTripDetail() {
     trip.budget > 0 ? '預算 ' + fmtAmount(trip.budget) + ' ' + trip.currency : null,
   ].filter(Boolean).join('　');
   document.getElementById('trip-detail-meta').textContent = meta;
+
+  // Share link
+  renderShareLink(trip.share_token);
 
   // Identity bar — load from server first
   await loadTripIdentityFromServer();

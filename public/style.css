@@ -517,6 +517,21 @@ button.sm { padding: 4px 10px; font-size: 0.8rem; }
 .cal-day.selected.is-today { background: var(--accent); }
 .cal-empty { cursor: default; }
 
+/* ── Share link ──────────────────────────────────────────────── */
+.trip-share-link { margin: 0.5rem 0; }
+.share-link-row {
+  display: flex; align-items: center; gap: 0.4rem;
+  flex-wrap: wrap;
+  background: var(--surface); padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+}
+.share-label { font-size: 0.85rem; color: var(--text-sub); white-space: nowrap; }
+.share-url {
+  flex: 1; min-width: 180px;
+  background: transparent; border: none; outline: none;
+  color: var(--text); font-size: 0.85rem; font-family: monospace;
+}
+
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 480px) {
   .row { flex-direction: column; }

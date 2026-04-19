@@ -2,6 +2,9 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 const db = require('./db');
 const { handleLineWebhook } = require('./line');
 
@@ -117,8 +120,31 @@ async function initSchema() {
       FOREIGN KEY (source_account_id) REFERENCES accounts(id),
       FOREIGN KEY (dest_account_id)   REFERENCES accounts(id)
     )`,
+    `CREATE TABLE IF NOT EXISTS users (
+      id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      google_sub VARCHAR(64) UNIQUE,
+      email      VARCHAR(255),
+      name       VARCHAR(255) NOT NULL,
+      picture    VARCHAR(512),
+      created_at DATETIME DEFAULT NOW()
+    )`,
   ];
   for (const sql of stmts) await db.run(sql);
+
+  // Idempotent column additions for existing DBs
+  await addColumnIfMissing('trip_members', 'user_id', 'INT NULL');
+  await addColumnIfMissing('trips', 'share_token', 'VARCHAR(32) NULL UNIQUE');
+}
+
+async function addColumnIfMissing(table, column, definition) {
+  const rows = await db.query(
+    `SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column]
+  );
+  if (rows[0].n === 0) {
+    await db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 // ── Seed data ────────────────────────────────────────────────────────────────
@@ -205,6 +231,48 @@ app.post('/line/webhook',
 );
 
 app.use(express.json());
+app.use(cookieParser());
+
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+const SESSION_COOKIE = 'et_session';
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+let _ephemeralSecret = null;
+function getSessionSecret() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (!_ephemeralSecret) {
+    _ephemeralSecret = crypto.randomBytes(32).toString('hex');
+    console.warn('SESSION_SECRET not set — using ephemeral secret (sessions lost on restart)');
+  }
+  return _ephemeralSecret;
+}
+
+function setSessionCookie(res, userId) {
+  const token = jwt.sign({ uid: userId }, getSessionSecret(), { expiresIn: '30d' });
+  res.cookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: SESSION_MAX_AGE_MS,
+  });
+}
+
+function readSession(req) {
+  const token = req.cookies?.[SESSION_COOKIE];
+  if (!token) return null;
+  try {
+    const secret = process.env.SESSION_SECRET;
+    if (!secret) return null;
+    const payload = jwt.verify(token, secret);
+    return payload.uid || null;
+  } catch (_) { return null; }
+}
+
+function clearSessionCookie(res) {
+  res.clearCookie(SESSION_COOKIE);
+}
+
 app.use(express.static(path.join(__dirname, '../public')));
 
 // ── Categories API ───────────────────────────────────────────────────────────
@@ -698,6 +766,28 @@ function generateJoinCode() {
   return code;
 }
 
+function generateShareToken() {
+  return crypto.randomBytes(16).toString('hex'); // 32-char URL-safe
+}
+
+async function ensureShareToken(tripId) {
+  const trip = await db.get('SELECT share_token FROM trips WHERE id = ?', [tripId]);
+  if (trip && trip.share_token) return trip.share_token;
+  let token, attempts = 0;
+  do {
+    token = generateShareToken();
+    attempts++;
+  } while ((await db.get('SELECT id FROM trips WHERE share_token = ?', [token])) && attempts < 10);
+  await db.run('UPDATE trips SET share_token = ? WHERE id = ?', [token, tripId]);
+  return token;
+}
+
+async function backfillShareTokens() {
+  const rows = await db.query('SELECT id FROM trips WHERE share_token IS NULL');
+  for (const r of rows) await ensureShareToken(r.id);
+  if (rows.length) console.log(`Backfilled share_token for ${rows.length} trip(s)`);
+}
+
 function computeSettlement(members, expenses) {
   const net = {};
   members.forEach(m => { net[m.id] = 0; });
@@ -744,6 +834,7 @@ app.post('/api/trips', async (req, res) => {
     'INSERT INTO trips (name, destination, start_date, end_date, budget, currency, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [name, destination || null, start_date || null, end_date || null, budget || 0, currency || 'TWD', created_by || null]
   );
+  await ensureShareToken(result.insertId);
   res.status(201).json(await db.get('SELECT * FROM trips WHERE id = ?', [result.insertId]));
 });
 
@@ -812,6 +903,179 @@ app.post('/api/trips/join', async (req, res) => {
   if (!member) return res.status(404).json({ error: '邀請碼無效' });
   const trip = await db.get('SELECT * FROM trips WHERE id = ?', [member.trip_id]);
   res.json({ member, trip });
+});
+
+// ── Auth: Google OAuth + session ──────────────────────────────────────────────
+
+function googleOAuthConfigured() {
+  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CALLBACK_URL);
+}
+
+// GET /auth/google?share_token=<optional>
+app.get('/auth/google', (req, res) => {
+  if (!googleOAuthConfigured()) {
+    return res.status(501).send('Google OAuth 尚未設定。請在 .env 填入 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_CALLBACK_URL。');
+  }
+  const share_token = req.query.share_token || null;
+  const nonce = crypto.randomBytes(12).toString('hex');
+  const state = jwt.sign({ share_token, nonce }, getSessionSecret(), { expiresIn: '10m' });
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: process.env.GOOGLE_CALLBACK_URL,
+    scope: 'openid email profile',
+    state,
+    prompt: 'select_account',
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+// GET /auth/google/callback
+app.get('/auth/google/callback', async (req, res) => {
+  if (!googleOAuthConfigured()) return res.status(501).send('OAuth not configured');
+  const { code, state, error } = req.query;
+  if (error) return res.status(400).send(`Google 登入失敗：${error}`);
+  if (!code || !state) return res.status(400).send('Missing code or state');
+
+  let stateData;
+  try { stateData = jwt.verify(state, getSessionSecret()); }
+  catch (_) { return res.status(400).send('State invalid or expired'); }
+
+  // Exchange code for tokens
+  let tokenJson;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: process.env.GOOGLE_CALLBACK_URL,
+        grant_type: 'authorization_code',
+      }),
+    });
+    tokenJson = await r.json();
+    if (!r.ok) throw new Error(tokenJson.error_description || 'token exchange failed');
+  } catch (e) {
+    return res.status(500).send(`Token exchange error: ${e.message}`);
+  }
+
+  // Parse id_token payload (trusted channel — from Google over HTTPS)
+  const idToken = tokenJson.id_token;
+  if (!idToken) return res.status(500).send('No id_token in response');
+  const [, payloadB64] = idToken.split('.');
+  const profile = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+  // profile: { sub, email, email_verified, name, picture, ... }
+
+  // Find or create user
+  let user = await db.get('SELECT * FROM users WHERE google_sub = ?', [profile.sub]);
+  if (!user) {
+    const result = await db.run(
+      'INSERT INTO users (google_sub, email, name, picture) VALUES (?, ?, ?, ?)',
+      [profile.sub, profile.email || null, profile.name || profile.email || 'User', profile.picture || null]
+    );
+    user = await db.get('SELECT * FROM users WHERE id = ?', [result.insertId]);
+  } else {
+    // Refresh profile snapshot
+    await db.run('UPDATE users SET email=?, name=?, picture=? WHERE id=?',
+      [profile.email || user.email, profile.name || user.name, profile.picture || user.picture, user.id]);
+  }
+
+  setSessionCookie(res, user.id);
+
+  // If state carries a share_token, auto-join that trip
+  if (stateData.share_token) {
+    const trip = await db.get('SELECT id FROM trips WHERE share_token = ?', [stateData.share_token]);
+    if (trip) {
+      const existing = await db.get(
+        'SELECT id FROM trip_members WHERE trip_id = ? AND user_id = ?', [trip.id, user.id]
+      );
+      if (!existing) {
+        let joinCode, attempts = 0;
+        do {
+          joinCode = generateJoinCode();
+          attempts++;
+        } while ((await db.get('SELECT id FROM trip_members WHERE join_code = ?', [joinCode])) && attempts < 10);
+        await db.run(
+          'INSERT INTO trip_members (trip_id, name, email, join_code, user_id) VALUES (?, ?, ?, ?, ?)',
+          [trip.id, user.name, user.email, joinCode, user.id]
+        );
+      }
+      return res.redirect(`/#trip/${stateData.share_token}`);
+    }
+  }
+  res.redirect('/#trips');
+});
+
+// GET /api/me — current session user (null if not logged in)
+app.get('/api/me', async (req, res) => {
+  const uid = readSession(req);
+  if (!uid) return res.json({ user: null });
+  const user = await db.get('SELECT id, email, name, picture FROM users WHERE id = ?', [uid]);
+  res.json({ user });
+});
+
+// POST /auth/logout
+app.post('/auth/logout', (req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+// ── Share-link access ─────────────────────────────────────────────────────────
+
+// GET /api/trips/by-share/:token — fetch trip via share link
+app.get('/api/trips/by-share/:token', async (req, res) => {
+  const trip = await db.get('SELECT * FROM trips WHERE share_token = ?', [req.params.token]);
+  if (!trip) return res.status(404).json({ error: '分享連結無效' });
+  const members = await db.query('SELECT id, name, email, user_id FROM trip_members WHERE trip_id = ? ORDER BY id', [trip.id]);
+  const expenses = await db.query(`
+    SELECT te.*, tm.name AS paid_by_name
+    FROM trip_expenses te LEFT JOIN trip_members tm ON te.paid_by = tm.id
+    WHERE te.trip_id = ? ORDER BY te.date DESC, te.id DESC
+  `, [trip.id]);
+
+  // If authenticated via Google session, surface their trip_member row
+  const uid = readSession(req);
+  let current_member = null;
+  if (uid) {
+    current_member = await db.get(
+      'SELECT id, name, email FROM trip_members WHERE trip_id = ? AND user_id = ?',
+      [trip.id, uid]
+    );
+  }
+  res.json({ ...trip, members, expenses, current_member });
+});
+
+// POST /api/trips/by-share/:token/join  { name, device_token }
+// Quick-join by name only — creates trip_member + auto-claims to device
+app.post('/api/trips/by-share/:token/join', async (req, res) => {
+  const { name, device_token } = req.body;
+  if (!name || !device_token) {
+    return res.status(400).json({ error: 'name and device_token are required' });
+  }
+  const trip = await db.get('SELECT id FROM trips WHERE share_token = ?', [req.params.token]);
+  if (!trip) return res.status(404).json({ error: '分享連結無效' });
+
+  const member = await db.transaction(async (tx) => {
+    let joinCode, attempts = 0;
+    do {
+      joinCode = generateJoinCode();
+      attempts++;
+    } while ((await tx.get('SELECT id FROM trip_members WHERE join_code = ?', [joinCode])) && attempts < 10);
+    const result = await tx.run(
+      'INSERT INTO trip_members (trip_id, name, join_code) VALUES (?, ?, ?)',
+      [trip.id, name.trim(), joinCode]
+    );
+    await tx.run(`
+      INSERT INTO trip_member_claims (member_id, trip_id, device_token)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE member_id = VALUES(member_id), claimed_at = NOW()
+    `, [result.insertId, trip.id, device_token]);
+    return tx.get('SELECT * FROM trip_members WHERE id = ?', [result.insertId]);
+  });
+  res.status(201).json({ trip_id: trip.id, member });
 });
 
 app.post('/api/trips/:id/expenses', async (req, res) => {
@@ -947,6 +1211,7 @@ app.get('*', (req, res) => {
 async function start() {
   await initSchema();
   await seedData();
+  await backfillShareTokens();
   app.listen(PORT, () => {
     console.log(`Expense Tracker running at http://localhost:${PORT}`);
   });

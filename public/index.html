@@ -271,6 +271,7 @@
           <button class="secondary" id="trip-back-btn">← 返回</button>
           <h2 id="trip-detail-title"></h2>
           <p id="trip-detail-meta" class="trip-meta"></p>
+          <div id="trip-share-link" class="trip-share-link"></div>
           <div id="trip-identity-bar"></div>
         </div>
 
@@ -346,6 +347,30 @@
           <h3>平攤計算</h3>
           <button id="calc-settlement-btn" class="secondary">重新計算</button>
           <div id="trip-settlement"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ Trip Share / Join Page (visitor flow) ═══ -->
+    <section id="page-trip-share" class="page">
+      <div class="form-card">
+        <h2 id="share-trip-name">旅遊分帳</h2>
+        <p id="share-trip-meta" class="trip-meta"></p>
+        <div id="share-join-box">
+          <h3>加入此旅遊分帳</h3>
+          <p>選擇你要怎麼記錄：</p>
+          <div class="form-actions">
+            <button type="button" id="share-google-btn" class="secondary">
+              🔐 用 Google 登入
+            </button>
+          </div>
+          <p style="margin-top:1rem">或直接輸入名字加入：</p>
+          <form id="share-name-form">
+            <label>你的名字<input type="text" id="share-name-input" required placeholder="例：小明" maxlength="32"></label>
+            <div class="form-actions">
+              <button type="submit">加入</button>
+            </div>
+          </form>
         </div>
       </div>
     </section>
