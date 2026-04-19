@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const db = require('./db');
+const { handleLineWebhook } = require('./line');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -181,6 +182,17 @@ async function enrichAccount(account) {
 }
 
 // ── Middleware ────────────────────────────────────────────────────────────────
+
+// LINE webhook: raw body required for HMAC signature verification
+app.post('/line/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res, next) => {
+    req.rawBody = req.body;
+    try { req.body = JSON.parse(req.body.toString()); } catch (_) { req.body = {}; }
+    next();
+  },
+  handleLineWebhook
+);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
