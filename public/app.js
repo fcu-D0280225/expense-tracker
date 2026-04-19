@@ -4,6 +4,7 @@ let accounts = [];
 let categories = [];
 let currentTxType = 'expense';
 let editingAccountId = null;
+let editingRecurringId = null;
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -563,6 +564,7 @@ async function loadRecurringPage() {
 
   const todayStr = today();
   container.innerHTML = items.map(r => {
+    if (editingRecurringId === r.id) return renderRecurringEditRow(r);
     const isDue = r.next_date <= todayStr;
     return `
       <div class="recurring-item">
@@ -575,11 +577,89 @@ async function loadRecurringPage() {
           <div class="rec-detail">${r.source_name} → ${r.dest_name} | 下次：${r.next_date}${r.category_name ? ' | ' + r.category_name : ''}</div>
         </div>
         <div class="rec-amount">${fmtAmount(r.amount)}</div>
-        <div class="expense-actions">
+        <div class="expense-actions" style="display:flex;gap:0.3rem;">
+          <button onclick="startRecurringEdit(${r.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">編輯</button>
           <button class="danger" onclick="deleteRecurring(${r.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">刪除</button>
         </div>
       </div>`;
   }).join('');
+}
+
+function accountOptionGroups(selectedId) {
+  const typeOrder = ['asset', 'liabilities', 'revenue', 'expense'];
+  let html = '';
+  for (const type of typeOrder) {
+    const group = accounts.filter(a => a.type === type);
+    if (!group.length) continue;
+    html += `<optgroup label="${ACCOUNT_TYPE_LABELS[type]}">`;
+    for (const a of group) {
+      const sel = a.id === selectedId ? ' selected' : '';
+      html += `<option value="${a.id}"${sel}>${escHtml(a.icon || '')} ${escHtml(a.name)}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  return html;
+}
+
+function renderRecurringEditRow(r) {
+  const freqOptions = Object.entries(FREQ_LABELS).map(([k, v]) =>
+    `<option value="${k}"${k === r.repeat_freq ? ' selected' : ''}>${v}</option>`
+  ).join('');
+  return `
+    <div class="recurring-item recurring-item--editing" style="flex-wrap:wrap;gap:0.5rem;">
+      <div class="rec-info" style="flex:1 1 100%;font-weight:600;">${escHtml(r.title)}</div>
+      <div class="form-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.5rem;flex:1 1 100%;">
+        <label style="font-size:0.75rem;">金額
+          <input id="rec-edit-amount-${r.id}" type="number" step="1" value="${r.amount}" style="width:100%;padding:0.3rem;" />
+        </label>
+        <label style="font-size:0.75rem;">頻率
+          <select id="rec-edit-freq-${r.id}" style="width:100%;padding:0.3rem;">${freqOptions}</select>
+        </label>
+        <label style="font-size:0.75rem;">來源帳戶
+          <select id="rec-edit-source-${r.id}" style="width:100%;padding:0.3rem;">${accountOptionGroups(r.source_account_id)}</select>
+        </label>
+        <label style="font-size:0.75rem;">目的帳戶
+          <select id="rec-edit-dest-${r.id}" style="width:100%;padding:0.3rem;">${accountOptionGroups(r.dest_account_id)}</select>
+        </label>
+        <label style="font-size:0.75rem;">下次日期
+          <input id="rec-edit-next-${r.id}" type="date" value="${r.next_date}" style="width:100%;padding:0.3rem;" />
+        </label>
+      </div>
+      <div class="expense-actions" style="flex:1 1 100%;display:flex;justify-content:flex-end;gap:0.3rem;">
+        <button onclick="saveRecurringEdit(${r.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">儲存</button>
+        <button class="secondary" onclick="cancelRecurringEdit()" style="padding:0.3rem 0.6rem;font-size:0.75rem">取消</button>
+      </div>
+    </div>`;
+}
+
+function startRecurringEdit(id) {
+  editingRecurringId = id;
+  loadRecurringPage();
+}
+
+function cancelRecurringEdit() {
+  editingRecurringId = null;
+  loadRecurringPage();
+}
+
+async function saveRecurringEdit(id) {
+  const amount = parseFloat(document.getElementById(`rec-edit-amount-${id}`).value);
+  const repeat_freq = document.getElementById(`rec-edit-freq-${id}`).value;
+  const source_account_id = parseInt(document.getElementById(`rec-edit-source-${id}`).value, 10);
+  const dest_account_id = parseInt(document.getElementById(`rec-edit-dest-${id}`).value, 10);
+  const next_date = document.getElementById(`rec-edit-next-${id}`).value;
+  if (!amount || amount <= 0) { alert('金額需為正數'); return; }
+  if (!next_date) { alert('請選擇下次日期'); return; }
+  if (source_account_id === dest_account_id) { alert('來源與目的帳戶不可相同'); return; }
+  try {
+    await api('PUT', `/api/recurring/${id}`, {
+      amount, repeat_freq, source_account_id, dest_account_id, next_date,
+    });
+    editingRecurringId = null;
+    loadRecurringPage();
+  } catch (err) {
+    alert('更新失敗：' + err.message);
+  }
 }
 
 document.getElementById('recurring-form').addEventListener('submit', async e => {
