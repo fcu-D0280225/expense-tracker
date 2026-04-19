@@ -3,6 +3,7 @@
 let accounts = [];
 let categories = [];
 let currentTxType = 'expense';
+let editingAccountId = null;
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -416,15 +417,28 @@ async function loadAccountsPage() {
     for (const a of accs) {
       const displayBalance = (type === 'revenue' || type === 'expense') ? Math.abs(a.balance) : a.balance;
       const negClass = a.balance < 0 && type !== 'revenue' && type !== 'expense' ? 'negative' : '';
-      html += `
-        <div class="account-card">
-          <div class="acc-icon">${a.icon}</div>
-          <div class="acc-info"><div class="acc-name">${escHtml(a.name)}</div></div>
-          <div class="acc-balance ${negClass}">${fmtAmount(displayBalance)}</div>
-          <div class="expense-actions">
-            <button class="danger" onclick="deleteAccount(${a.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">刪除</button>
-          </div>
-        </div>`;
+      if (editingAccountId === a.id) {
+        html += `
+          <div class="account-card account-card--editing">
+            <input id="acc-edit-icon-${a.id}" value="${escHtml(a.icon || '')}" maxlength="4" style="width:3rem;text-align:center;font-size:1.25rem;padding:0.3rem;" />
+            <input id="acc-edit-name-${a.id}" value="${escHtml(a.name)}" style="flex:1;padding:0.3rem 0.5rem;" />
+            <div class="expense-actions" style="display:flex;gap:0.3rem;">
+              <button onclick="saveAccountEdit(${a.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">儲存</button>
+              <button class="secondary" onclick="cancelAccountEdit()" style="padding:0.3rem 0.6rem;font-size:0.75rem">取消</button>
+            </div>
+          </div>`;
+      } else {
+        html += `
+          <div class="account-card">
+            <div class="acc-icon">${a.icon}</div>
+            <div class="acc-info"><div class="acc-name">${escHtml(a.name)}</div></div>
+            <div class="acc-balance ${negClass}">${fmtAmount(displayBalance)}</div>
+            <div class="expense-actions" style="display:flex;gap:0.3rem;">
+              <button onclick="startAccountEdit(${a.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">編輯</button>
+              <button class="danger" onclick="deleteAccount(${a.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">刪除</button>
+            </div>
+          </div>`;
+      }
     }
     html += `<div class="account-total">小計 ${fmtAmount(total)}</div></div>`;
   }
@@ -465,6 +479,36 @@ async function deleteAccount(id) {
     populateAccountDropdowns();
   } catch (err) {
     alert('刪除失敗：' + err.message);
+  }
+}
+
+function startAccountEdit(id) {
+  editingAccountId = id;
+  loadAccountsPage();
+}
+
+function cancelAccountEdit() {
+  editingAccountId = null;
+  loadAccountsPage();
+}
+
+async function saveAccountEdit(id) {
+  const nameInput = document.getElementById(`acc-edit-name-${id}`);
+  const iconInput = document.getElementById(`acc-edit-icon-${id}`);
+  const name = nameInput.value.trim();
+  const icon = iconInput.value.trim();
+  if (!name) {
+    alert('名稱不可為空');
+    return;
+  }
+  try {
+    await api('PUT', `/api/accounts/${id}`, { name, icon: icon || '💰' });
+    editingAccountId = null;
+    await loadAccounts();
+    loadAccountsPage();
+    populateAccountDropdowns();
+  } catch (err) {
+    alert('更新失敗：' + err.message);
   }
 }
 
