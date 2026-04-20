@@ -18,6 +18,7 @@
       <a class="tab" href="#budgets" data-tab="budgets">預算</a>
       <a class="tab" href="#reports" data-tab="reports">報表</a>
       <a class="tab" href="#trips" data-tab="trips">旅遊</a>
+      <a class="tab" href="#categories" data-tab="categories">分類</a>
     </nav>
   </header>
 
@@ -349,6 +350,23 @@
           <div id="trip-settlement"></div>
         </div>
       </div>
+    </section>
+
+    <!-- ═══ Categories Tab ═══ -->
+    <section id="page-categories" class="page">
+      <div class="form-card">
+        <h2>新增大分類</h2>
+        <form id="category-form">
+          <div class="row">
+            <label>名稱<input type="text" id="cat-name" required placeholder="例：飲食"></label>
+            <label>圖示<input type="text" id="cat-icon" maxlength="4" placeholder="📦"></label>
+          </div>
+          <div class="form-actions">
+            <button type="submit">新增大分類</button>
+          </div>
+        </form>
+      </div>
+      <div id="categories-list"></div>
     </section>
 
     <!-- ═══ Trip Share / Join Page (visitor flow) ═══ -->

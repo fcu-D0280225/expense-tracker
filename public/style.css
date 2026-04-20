@@ -532,6 +532,26 @@ button.sm { padding: 4px 10px; font-size: 0.8rem; }
   color: var(--text); font-size: 0.85rem; font-family: monospace;
 }
 
+/* ── Categories Page ─────────────────────────────────────────── */
+.sub-block {
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  margin: -0.5rem 0 1rem 1.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 8px 8px 0;
+}
+.sub-list { list-style: none; padding: 0; margin: 0 0 0.5rem 0; }
+.sub-list .sub-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.25rem 0; font-size: 0.85rem;
+}
+.sub-list .empty { padding: 0.25rem 0; font-size: 0.8rem; opacity: 0.6; }
+.sub-add-form { display: flex; gap: 0.4rem; }
+.sub-add-form input {
+  flex: 1; padding: 0.3rem 0.5rem; font-size: 0.8rem;
+}
+.sub-add-form button { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 480px) {
   .row { flex-direction: column; }

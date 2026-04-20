@@ -5,6 +5,7 @@ let categories = [];
 let currentTxType = 'expense';
 let editingAccountId = null;
 let editingRecurringId = null;
+let editingCategoryId = null;
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ function initTabs() {
     if (hash === 'budgets') loadBudgetsPage();
     if (hash === 'reports') loadReportsPage();
     if (hash === 'trips') loadTripsPage();
+    if (hash === 'categories') loadCategoriesPage();
   };
   window.addEventListener('hashchange', navigate);
   navigate();
@@ -1457,6 +1459,131 @@ async function deleteTripExpense(id) {
 }
 
 document.getElementById('calc-settlement-btn').addEventListener('click', renderSettlement);
+
+// ── Categories Page ──────────────────────────────────────────────────────────
+
+async function loadCategoriesPage() {
+  await loadCategories();
+  const container = document.getElementById('categories-list');
+  if (categories.length === 0) {
+    container.innerHTML = '<p class="empty">尚無分類，請使用上方表單新增。</p>';
+    return;
+  }
+
+  let html = '';
+  for (const c of categories) {
+    const subItems = (c.subcategories || []).map(s => `
+      <li class="sub-item">
+        <span>${escHtml(s.name)}</span>
+        <button class="danger" onclick="deleteSubcategory(${s.id})" style="padding:0.2rem 0.5rem;font-size:0.7rem">刪除</button>
+      </li>`).join('');
+
+    if (editingCategoryId === c.id) {
+      html += `
+        <div class="account-card account-card--editing">
+          <input id="cat-edit-icon-${c.id}" value="${escHtml(c.icon || '')}" maxlength="4" style="width:3rem;text-align:center;font-size:1.25rem;padding:0.3rem;" />
+          <input id="cat-edit-name-${c.id}" value="${escHtml(c.name)}" style="flex:1;padding:0.3rem 0.5rem;" />
+          <div class="expense-actions" style="display:flex;gap:0.3rem;">
+            <button onclick="saveCategoryEdit(${c.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">儲存</button>
+            <button class="secondary" onclick="cancelCategoryEdit()" style="padding:0.3rem 0.6rem;font-size:0.75rem">取消</button>
+          </div>
+        </div>`;
+    } else {
+      html += `
+        <div class="account-card">
+          <div class="acc-icon">${escHtml(c.icon || '📦')}</div>
+          <div class="acc-info"><div class="acc-name">${escHtml(c.name)}</div></div>
+          <div class="expense-actions" style="display:flex;gap:0.3rem;">
+            <button onclick="startCategoryEdit(${c.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">編輯</button>
+            <button class="danger" onclick="deleteCategory(${c.id})" style="padding:0.3rem 0.6rem;font-size:0.75rem">刪除</button>
+          </div>
+        </div>`;
+    }
+
+    html += `
+      <div class="sub-block">
+        <ul class="sub-list">${subItems || '<li class="empty">（無子分類）</li>'}</ul>
+        <form class="sub-add-form" onsubmit="addSubcategory(event, ${c.id})">
+          <input type="text" id="sub-new-${c.id}" placeholder="新增子分類" maxlength="32" required>
+          <button type="submit">新增</button>
+        </form>
+      </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+document.getElementById('category-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = document.getElementById('cat-name').value.trim();
+  const icon = document.getElementById('cat-icon').value.trim() || '📦';
+  if (!name) { alert('名稱不可為空'); return; }
+  try {
+    await api('POST', '/api/categories', { name, icon });
+    document.getElementById('category-form').reset();
+    await loadCategoriesPage();
+  } catch (err) {
+    alert('新增失敗：' + err.message);
+  }
+});
+
+function startCategoryEdit(id) {
+  editingCategoryId = id;
+  loadCategoriesPage();
+}
+
+function cancelCategoryEdit() {
+  editingCategoryId = null;
+  loadCategoriesPage();
+}
+
+async function saveCategoryEdit(id) {
+  const name = document.getElementById(`cat-edit-name-${id}`).value.trim();
+  const icon = document.getElementById(`cat-edit-icon-${id}`).value.trim();
+  if (!name) { alert('名稱不可為空'); return; }
+  try {
+    await api('PUT', `/api/categories/${id}`, { name, icon: icon || '📦' });
+    editingCategoryId = null;
+    await loadCategoriesPage();
+  } catch (err) {
+    alert('更新失敗：' + err.message);
+  }
+}
+
+async function deleteCategory(id) {
+  if (!confirm('確定刪除此大分類？所有子分類也會被刪除（已使用此分類的交易仍會保留但失去分類關聯）。')) return;
+  try {
+    await api('DELETE', `/api/categories/${id}`);
+    if (editingCategoryId === id) editingCategoryId = null;
+    await loadCategoriesPage();
+  } catch (err) {
+    alert('刪除失敗：' + err.message);
+  }
+}
+
+async function addSubcategory(e, catId) {
+  e.preventDefault();
+  const input = document.getElementById(`sub-new-${catId}`);
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await api('POST', `/api/categories/${catId}/subcategories`, { name });
+    input.value = '';
+    await loadCategoriesPage();
+  } catch (err) {
+    alert('新增子分類失敗：' + err.message);
+  }
+}
+
+async function deleteSubcategory(id) {
+  if (!confirm('確定刪除此子分類？')) return;
+  try {
+    await api('DELETE', `/api/subcategories/${id}`);
+    await loadCategoriesPage();
+  } catch (err) {
+    alert('刪除失敗：' + err.message);
+  }
+}
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
