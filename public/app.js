@@ -1019,9 +1019,25 @@ function renderShareLink(shareToken) {
     </div>`;
 }
 
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  // HTTP fallback via temporary textarea
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(el);
+  el.focus();
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+  return Promise.resolve();
+}
+
 window.copyShareLink = async function (btn, url) {
   try {
-    await navigator.clipboard.writeText(url);
+    await copyText(url);
     const orig = btn.textContent;
     btn.textContent = '已複製 ✓';
     setTimeout(() => { btn.textContent = orig; }, 1500);
@@ -1441,7 +1457,7 @@ function startEditTripExpense(id) {
 }
 
 function copyJoinCode(code, btn) {
-  navigator.clipboard.writeText(code).then(() => {
+  copyText(code).then(() => {
     const orig = btn.textContent;
     btn.textContent = '已複製！';
     setTimeout(() => { btn.textContent = orig; }, 1500);
