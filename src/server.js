@@ -1,5 +1,6 @@
 'use strict';
 require('dotenv').config();
+require('express-async-errors');
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
@@ -415,7 +416,7 @@ app.get('/api/transactions', async (req, res) => {
   else if (type === 'transfer') sql += " AND sa.type = 'asset' AND da.type = 'asset'";
 
   sql += ' ORDER BY t.date DESC, t.created_at DESC';
-  if (lim) { sql += ' LIMIT ?'; params.push(parseInt(lim)); }
+  if (lim) { sql += ` LIMIT ${parseInt(lim)}`; }
 
   res.json(await db.query(sql, params));
 });
@@ -567,8 +568,8 @@ app.get('/api/reports/monthly', async (req, res) => {
     JOIN accounts da ON t.dest_account_id   = da.id
     GROUP BY LEFT(t.date, 7)
     ORDER BY month DESC
-    LIMIT ?
-  `, [months]);
+    LIMIT ${months}
+  `);
   res.json(rows.reverse());
 });
 
@@ -576,10 +577,10 @@ app.get('/api/reports/category', async (req, res) => {
   const { from, to } = req.query;
   let sql = `
     SELECT
-      COALESCE(c.name, da.name) AS name,
-      COALESCE(c.icon, da.icon) AS icon,
-      SUM(t.amount)             AS total,
-      COUNT(*)                  AS count
+      COALESCE(c.name, da.name)      AS name,
+      MIN(COALESCE(c.icon, da.icon)) AS icon,
+      SUM(t.amount)                  AS total,
+      COUNT(*)                       AS count
     FROM transactions t
     JOIN accounts sa ON t.source_account_id = sa.id
     JOIN accounts da ON t.dest_account_id   = da.id
@@ -1204,6 +1205,13 @@ app.get('/api/trips/identity', async (req, res) => {
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
   res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// ── Error handler ────────────────────────────────────────────────────────────
+
+app.use((err, req, res, _next) => {
+  console.error(`[${req.method} ${req.originalUrl}]`, err);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────
