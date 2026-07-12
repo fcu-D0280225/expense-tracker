@@ -22,6 +22,7 @@
   --sky-dim:     rgba(56,189,248,0.15);
   --red:         #f87171;
   --red-dim:     rgba(248,113,113,0.15);
+  --red-hover:   #ef4444;
   --amber:       #fbbf24;
   --amber-dim:   rgba(251,191,36,0.15);
 
@@ -155,7 +156,7 @@ button.secondary {
 }
 button.secondary:hover { background: var(--surface-hov); color: var(--text); }
 button.danger { background: var(--red); color: #fff; }
-button.danger:hover { background: #ef4444; }
+button.danger:hover { background: var(--red-hover); }
 
 /* ── Transaction type bar ────────────────────────────────────── */
 .tx-type-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }

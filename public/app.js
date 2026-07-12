@@ -31,6 +31,17 @@ function escHtml(s) {
 
 const ACCOUNT_TYPE_LABELS = { asset: '資產', liabilities: '負債', revenue: '收入來源', expense: '支出類別' };
 const FREQ_LABELS = { daily: '每日', weekly: '每週', monthly: '每月', yearly: '每年' };
+
+// ── Chart Colors（見 DESIGN.md §8-4）───────────────────────────────────────
+// SVG 的 fill/stroke 屬性無法直接吃 CSS var()，用 cssVar() 在渲染當下讀
+// public/style.css :root 的實際值，確保圖表顏色與 token 單一事實來源同步
+// （不手動複製 hex，改 :root 值時圖表會自動跟著變）。
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// 圓餅圖色板：idx0/3/4（#818cf8 / #f87171 / #38bdf8）分別與 --accent-hi / --red / --sky
+// 同值，其餘 7 色為分類用擴充色階，未登記進 :root。若調整請同步回 DESIGN.md §8-4。
 const PIE_COLORS = ['#818cf8','#34d399','#f59e0b','#f87171','#38bdf8','#a78bfa','#fb923c','#4ade80','#e879f9','#94a3b8'];
 
 // ── Tab Navigation ───────────────────────────────────────────────────────────
@@ -462,7 +473,7 @@ async function loadAccountsPage() {
   // Net worth
   const assetTotal = (groups.asset || []).reduce((s, a) => s + a.balance, 0);
   const liabTotal = (groups.liabilities || []).reduce((s, a) => s + a.balance, 0);
-  html += `<div class="account-total" style="background:#d1fae5;color:#065f46;margin-top:1rem">淨資產 ${fmtAmount(assetTotal - liabTotal)}</div>`;
+  html += `<div class="account-total" style="background:var(--green-dim);color:var(--green);margin-top:1rem">淨資產 ${fmtAmount(assetTotal - liabTotal)}</div>`;
 
   container.innerHTML = html;
 }
@@ -587,7 +598,7 @@ async function loadRecurringPage() {
           <div class="rec-title">${escHtml(r.title)}
             <span class="badge">${FREQ_LABELS[r.repeat_freq]}</span>
             ${isDue ? '<span class="badge due">到期</span>' : ''}
-            ${!r.active ? '<span class="badge" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}
+            ${!r.active ? '<span class="badge" style="background:var(--red-dim);color:var(--red)">已停用</span>' : ''}
           </div>
           <div class="rec-detail">${r.source_name} → ${r.dest_name} | 下次：${r.next_date}${r.category_name ? ' | ' + r.category_name : ''}</div>
         </div>
@@ -838,9 +849,9 @@ async function loadNetworthChart() {
     <div class="line-chart-wrap">
       <svg viewBox="0 0 ${w} ${h}">
         ${gridLines}
-        <path class="line-area" d="${areaD}" fill="#818cf8"/>
-        <path class="line-path" d="${pathD}" stroke="#4f46e5"/>
-        ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#4f46e5"/>`).join('')}
+        <path class="line-area" d="${areaD}" fill="${cssVar('--accent-hi')}"/>
+        <path class="line-path" d="${pathD}" stroke="${cssVar('--accent')}"/>
+        ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="${cssVar('--accent')}"/>`).join('')}
         ${labels}
       </svg>
     </div>`;
@@ -1355,7 +1366,7 @@ document.getElementById('texp-split-type').addEventListener('change', () => {
 
 function renderCustomSplitFields() {
   const div = document.getElementById('texp-custom-splits');
-  div.innerHTML = '<p style="font-size:0.85rem;color:#64748b;margin:4px 0">各人應分擔金額（TWD）：</p>' +
+  div.innerHTML = '<p style="font-size:0.85rem;color:var(--text-sub);margin:4px 0">各人應分擔金額（TWD）：</p>' +
     currentTripMembers.map(m => `
       <label style="display:flex;gap:8px;align-items:center;margin:4px 0">
         <span style="min-width:80px">${escHtml(m.name)}</span>

@@ -67,6 +67,7 @@
 | `--green` | `#22c55e` | `rgba(34,197,94,.15)` | 收入金額、還款方向（收款方）、bar chart 收入條 |
 | `--sky` | `#38bdf8` | `rgba(56,189,248,.15)` | 轉帳金額、`.badge` 預設底 |
 | `--red` | `#f87171` | `rgba(248,113,113,.15)` | 危險按鈕、負餘額、超支、settlement 付款方 |
+| `--red-hover` | `#ef4444` | — | `button.danger:hover`（比 `--red` 深一階，2026-07-12 新增登記，見 §8 item 7） |
 | `--amber` | `#fbbf24` | `rgba(251,191,36,.15)` | 預算警戒（80–100%）、`.badge.due` |
 
 ### 2.2 圓角 / 陰影
@@ -118,7 +119,7 @@
 | 卡片（清單項）| `.expense-item` / `.account-card` / `.recurring-item` / `.budget-card` | `--radius`、`--shadow`、hover 變 `--surface-hi` |
 | 按鈕（主要） | `button`（無 class） | `--accent` 底、白字、`--radius-sm`、hover `--accent-hi` |
 | 按鈕（次要） | `button.secondary` | `--surface-hi` 底、`--border` 框 |
-| 按鈕（危險） | `button.danger` | `--red` 底，hover `#ef4444`（唯一非 token 硬編碼但屬同色系加深，見 §8） |
+| 按鈕（危險） | `button.danger` | `--red` 底，hover `--red-hover`（2026-07-12 起已 token 化，見 §8 item 7） |
 | 小按鈕 | `button.sm` | `padding:4px 10px`，用於旅遊身份/成員操作 |
 | 輸入 / 下拉 | `input` / `select` | `--surface-hi` 底、`--border` 框、`44px` 最小高、`color-scheme:dark` |
 | 交易類型切換 | `.tx-type-bar` / `.tx-type`（`.active`） | 三態（支出/收入/轉帳），active 依 `data-type` 變色：支出=`--accent`、收入=`--green`、轉帳=`--sky`（轉帳文字反白為深色 `#0c1a24`） |
@@ -127,8 +128,8 @@
 | 金額顯示 | `.expense-amount`（`.income` / `.transfer`）/ `.acc-balance`（`.negative`）| 依交易類型／正負餘額切色 |
 | 徽章 | `.badge`（`.due`） | 預設 `--sky` 系，到期態 `--amber` 系，圓角 pill（`border-radius:99px`） |
 | 長條圖 | `.bar-chart` / `.bar.expense-bar`（`--accent`）/ `.bar.income-bar`（`--green`） | 純 CSS width 動畫（`transition: width .3s`） |
-| 圓餅圖 | `.pie-svg` + `.pie-legend` / `.legend-dot` | 顏色來自 `app.js` 的 `PIE_COLORS`（10 色陣列，獨立於 `:root`，見 §8） |
-| 折線圖 | `.line-chart-wrap svg` / `.line-path` / `.line-area` | SVG 手繪，顏色為硬編碼 hex（見 §8） |
+| 圓餅圖 | `.pie-svg` + `.pie-legend` / `.legend-dot` | 顏色來自 `app.js` 的 `PIE_COLORS`（10 色陣列，部分同值於 `:root`、部分為擴充色階，2026-07-12 起加註解標明對應與同步義務，見 §8 item 4） |
+| 折線圖 | `.line-chart-wrap svg` / `.line-path` / `.line-area` | SVG 手繪，2026-07-12 起改用 `app.js` 的 `cssVar()` helper 在渲染當下讀 `:root` token（`--accent` / `--accent-hi`），不再硬編碼 hex（見 §8 item 4） |
 | 預算進度 | `.budget-bar-track` / `.budget-bar-fill`（`.warn` / `.over`） | 正常 `--accent` → ≥80% `--amber` → 100%+ `--red`，左側 `border-left` 同步變色 |
 | 日曆選取器 | `.cal-picker` / `.cal-grid` / `.cal-day`（`.is-today` / `.selected`） | 內嵌式（非彈出），7 欄 grid |
 | 旅遊身份banner | `.identity-banner`（`.identity-set`） | 未認領=灰框、已認領=`--accent` 框 |
@@ -180,19 +181,19 @@
 
 ## 8. 已知漂移 / 待對齊（如實記錄，未動 code）
 
-以下為掃描時發現「語意應一致但值不一致」或「該用 token 卻硬編碼」的地方，供未來對齊參考，本次**未修改任何程式碼**：
+以下為掃描時發現「語意應一致但值不一致」或「該用 token 卻硬編碼」的地方，供未來對齊參考。**2026-07-12 由 frontend-agent 修掉其中不需品牌裁決的項目（3、4、5、7），其餘（1、2、6）維持現況記錄，等待 PM/品牌側裁決**：
 
-1. **品牌主色不一致**：`mine/BRAND.md` 登記攢攢鼠主色為 `#a855f7`（紫），但實際上線 CSS 的 `--accent` 是 `#6366f1`（靛紫），且全站找不到 `#a855f7` 這個值的任何出處。建議之後對齊時，由 PM/品牌側先決定「哪個是對的」（改 BRAND.md 登記色，或改產品 `--accent`），不是各自為政。
-2. **產品 UI 未出現品牌名稱與吉祥物**：`<title>`、`<h1>`、`manifest.json` 的 `name`/`short_name` 皆是「記帳本」/「記帳」，PWA icon 是 💰 emoji，全站無「攢攢鼠 / StashSquirrel」字樣或松鼠圖像。目前品牌僅存在於 HQ 文件層級，未落地到產品本身。
-3. **`--green` / `--red` 語意色在個別元件被繞過，改用淺色系（亮底深字）硬編碼**：
-   - `public/app.js:465`（淨資產列）：`background:#d1fae5;color:#065f46`（Tailwind emerald-100/800，淺色主題配色），與全站暗色主題（token 皆為「深底＋亮色文字」）風格不符，也未用 `--green-dim` / `--green`。
-   - `public/app.js:590`（固定支出「已停用」badge）：`background:#fee2e2;color:#991b1b`（Tailwind red-100/800），同樣是淺色主題配色，未用 `--red-dim` / `--red`。
-4. **折線圖 / 圓餅圖顏色未接 `:root` token**：
-   - `public/app.js:841-843`（淨資產走勢折線圖）：`fill="#818cf8"`（= `--accent-hi` 的值但寫死字串，非變數）、`stroke="#4f46e5"`（indigo-600，**與 `--accent #6366f1` 不是同一值**，是相近但不同的靛紫色調）。
-   - `public/app.js:34` `PIE_COLORS` 為獨立 10 色陣列（`#818cf8 #34d399 #f59e0b #f87171 #38bdf8 #a78bfa #fb923c #4ade80 #e879f9 #94a3b8`），其中僅 `#818cf8`（accent-hi）、`#f87171`（red）、`#38bdf8`（sky）與現有 token 完全同值，其餘 7 色是額外擴充的分類色階，未登記進 `:root`。SVG 無法用 CSS 變數渲染 `fill`/`stroke` 屬性是常見限制，但可考慮改用 JS 讀 `getComputedStyle` 取值以維持單一事實來源。
-5. **旅遊平攤說明文字硬編碼灰色**：`public/app.js:1358` `color:#64748b`（slate-500），全站其他次要文字一律用 `--text-sub #8888a8`，此處是唯一例外的漏網硬編碼。
-6. **字級與間距完全未 token 化**（見 §2.3、§2.4）：與顏色/圓角/陰影的 token 化程度不對稱，是否要補齊 `--fz-*` / `--space-*` 屬產品決策，本文件僅如實記錄現況、不建議擅自新增。
-7. **`button.danger:hover` 硬編碼 `#ef4444`**（`public/style.css:158`）：非 `--red` 的 dim/亮版本組合中的值，是額外引入的第三個紅色調（`--red` = `#f87171`，hover 用更深的 `#ef4444`），雖語意上合理（hover 加深），但沒有對應 token，純字面值。
+1. **品牌主色不一致（未修，待裁決）**：`mine/BRAND.md` 登記攢攢鼠主色為 `#a855f7`（紫），但實際上線 CSS 的 `--accent` 是 `#6366f1`（靛紫），且全站找不到 `#a855f7` 這個值的任何出處。建議之後對齊時，由 PM/品牌側先決定「哪個是對的」（改 BRAND.md 登記色，或改產品 `--accent`），不是各自為政。
+2. **產品 UI 未出現品牌名稱與吉祥物（未修，待裁決）**：`<title>`、`<h1>`、`manifest.json` 的 `name`/`short_name` 皆是「記帳本」/「記帳」，PWA icon 是 💰 emoji，全站無「攢攢鼠 / StashSquirrel」字樣或松鼠圖像。目前品牌僅存在於 HQ 文件層級，未落地到產品本身。
+3. **✅ 已修（2026-07-12）— `--green` / `--red` 語意色在個別元件被繞過，改用淺色系（亮底深字）硬編碼**：
+   - `public/app.js`（淨資產列）：原 `background:#d1fae5;color:#065f46`（Tailwind emerald-100/800，淺色主題配色）已改為 `background:var(--green-dim);color:var(--green)`，與全站暗色主題（深底＋亮色文字）風格一致。
+   - `public/app.js`（固定支出「已停用」badge）：原 `background:#fee2e2;color:#991b1b`（Tailwind red-100/800）已改為 `background:var(--red-dim);color:var(--red)`。
+4. **✅ 已修（2026-07-12）— 折線圖 / 圓餅圖顏色未接 `:root` token**：
+   - 淨資產走勢折線圖（`loadNetworthChart`）原 `fill="#818cf8"` / `stroke="#4f46e5"`（indigo-600，**與 `--accent #6366f1` 不是同一值**）已改為在渲染當下用新增的 `cssVar(name)` helper（`getComputedStyle(document.documentElement).getPropertyValue(name)`）動態讀 `--accent-hi` / `--accent`，不再手動複製 hex、也不會再跟 `:root` 脫鉤。
+   - `PIE_COLORS`（`public/app.js` 頂部，與 `cssVar()` helper集中放在同一個「Chart Colors」區塊）維持獨立 10 色陣列（SVG `fill` 沒辦法用 CSS var 動態插整個 palette，仍用字面 hex），但已加註解標明哪幾個 index 與 `:root` token 同值、哪些是擴充色階，並註明「若調整請同步回 DESIGN.md §8-4」的同步義務。
+5. **✅ 已修（2026-07-12）— 旅遊平攤說明文字硬編碼灰色**：`public/app.js`（`renderCustomSplitFields`）原 `color:#64748b`（slate-500）已改為 `color:var(--text-sub)`，與全站其他次要文字一致。
+6. **字級與間距完全未 token 化（未修，明確排除本次範圍）**：與顏色/圓角/陰影的 token 化程度不對稱，是否要補齊 `--fz-*` / `--space-*` 屬產品決策，本文件僅如實記錄現況、不建議擅自新增。
+7. **✅ 已修（2026-07-12）— `button.danger:hover` 硬編碼 `#ef4444`**（`public/style.css`）：已在 `:root` 新增 `--red-hover: #ef4444` token（見 §2.1），`button.danger:hover` 改為 `background: var(--red-hover)`，值不變、僅補上對應 token，語意仍是「`--red` 的 hover 加深版」。
 
 ---
 
