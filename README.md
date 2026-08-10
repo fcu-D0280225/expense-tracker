@@ -1,6 +1,8 @@
-# Expense Tracker 記帳本
+# StashSquirrel 攢攢鼠
 
-個人記帳 PWA，採雙式記帳架構，支援多帳戶、旅遊共帳、LINE 記帳機器人與月報表。
+> **StashSquirrel（攢攢鼠）** — 個人記帳 PWA，採雙式記帳架構，支援多帳戶、旅遊共帳、LINE 記帳機器人與月報表。
+
+系列 IP 命名見 [`../BRAND.md`](../BRAND.md)。
 
 ---
 
